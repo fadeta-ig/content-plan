@@ -26,6 +26,22 @@ class IdeaStatusUpdateSchema(Schema):
     status: str
 
 
+class IdeaUpdateSchema(Schema):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    status: Optional[str] = None
+
+
+def serialize_idea(i: Idea, default_status: str) -> dict:
+    return {
+        "id": str(i.id),
+        "title": i.title,
+        "content": i.description or "",
+        "status": i.status or default_status,
+        "created_at": i.created_at.strftime("%d %b %Y"),
+    }
+
+
 @router.get("/dashboard/kanban", summary="Get Kanban Columns & Ideas")
 def get_kanban_board(request: HttpRequest):
     user, workspace = get_current_user_and_workspace(request)
@@ -33,19 +49,19 @@ def get_kanban_board(request: HttpRequest):
     ideas = Idea.objects.filter(workspace=workspace).order_by("-created_at")
 
     unassigned_cards = [
-        {"id": str(i.id), "title": i.title, "content": i.description or "", "created_at": i.created_at.strftime("%d %b %Y")}
+        serialize_idea(i, "unassigned")
         for i in ideas.filter(status__in=["unassigned", "backlog"])
     ]
     todo_cards = [
-        {"id": str(i.id), "title": i.title, "content": i.description or "", "created_at": i.created_at.strftime("%d %b %Y")}
+        serialize_idea(i, "todo")
         for i in ideas.filter(status__in=["todo", "planned"])
     ]
     in_progress_cards = [
-        {"id": str(i.id), "title": i.title, "content": i.description or "", "created_at": i.created_at.strftime("%d %b %Y")}
+        serialize_idea(i, "in_progress")
         for i in ideas.filter(status="in_progress")
     ]
     done_cards = [
-        {"id": str(i.id), "title": i.title, "content": i.description or "", "created_at": i.created_at.strftime("%d %b %Y")}
+        serialize_idea(i, "done")
         for i in ideas.filter(status__in=["done", "scheduled", "approved"])
     ]
 
@@ -77,6 +93,7 @@ def create_kanban_idea(request: HttpRequest, payload: IdeaCreateSchema):
             "id": str(idea.id),
             "title": idea.title,
             "content": idea.description,
+            "status": idea.status,
             "created_at": idea.created_at.strftime("%d %b %Y"),
         },
     }
@@ -91,6 +108,39 @@ def update_kanban_idea_status(request: HttpRequest, idea_id: str, payload: IdeaS
     idea.status = payload.status
     idea.save(update_fields=["status"])
     return {"success": True, "status": idea.status}
+
+
+@router.patch("/dashboard/kanban/{idea_id}", summary="Update Idea Details")
+def update_kanban_idea_details(request: HttpRequest, idea_id: str, payload: IdeaUpdateSchema):
+    user, workspace = get_current_user_and_workspace(request)
+    idea = Idea.objects.filter(id=idea_id, workspace=workspace).first()
+    if not idea:
+        raise HttpError(404, "Ide tidak ditemukan.")
+    
+    updated_fields = []
+    if payload.title is not None:
+        idea.title = payload.title.strip()
+        updated_fields.append("title")
+    if payload.content is not None:
+        idea.description = payload.content.strip()
+        updated_fields.append("description")
+    if payload.status is not None:
+        idea.status = payload.status
+        updated_fields.append("status")
+
+    if updated_fields:
+        idea.save(update_fields=updated_fields)
+
+    return {
+        "success": True,
+        "idea": {
+            "id": str(idea.id),
+            "title": idea.title,
+            "content": idea.description,
+            "status": idea.status,
+            "created_at": idea.created_at.strftime("%d %b %Y"),
+        },
+    }
 
 
 @router.delete("/dashboard/kanban/{idea_id}", summary="Delete Idea")

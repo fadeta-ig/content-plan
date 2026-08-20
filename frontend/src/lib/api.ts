@@ -138,6 +138,13 @@ export const api = {
     });
   },
 
+  async updateIdea(ideaId: string, payload: { title?: string; content?: string; status?: string }) {
+    return fetcher<{ success: boolean; idea: any }>(`/dashboard/kanban/${ideaId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async deleteIdea(ideaId: string) {
     return fetcher<{ success: boolean; message: string }>(`/dashboard/kanban/${ideaId}`, {
       method: 'DELETE',

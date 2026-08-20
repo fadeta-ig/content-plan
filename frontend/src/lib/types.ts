@@ -121,6 +121,9 @@ export interface KanbanCard {
   title: string;
   content: string;
   created_at: string;
+  status?: string;
+  tags?: string[];
+  media_url?: string;
 }
 
 export interface KanbanColumn {
