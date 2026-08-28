@@ -31,6 +31,8 @@ import {
   Tag,
   AlertCircle,
   Share2,
+  Radio,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { CalendarEvent, ShootingCrewMember, ShootingEquipmentItem, ShootingSession } from '@/lib/types';
@@ -47,12 +49,12 @@ const MONTH_NAMES = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
-const SHOOTING_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  planned: { label: 'Rencana', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
-  confirmed: { label: 'Terkonfirmasi', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
-  in_progress: { label: 'Sedang Take', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
-  completed: { label: 'Selesai Shooting', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  cancelled: { label: 'Dibatalkan', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
+const SHOOTING_STATUS_CONFIG: Record<string, { label: string; badgeClass: string }> = {
+  planned: { label: 'Rencana', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' },
+  confirmed: { label: 'Terkonfirmasi', badgeClass: 'bg-slate-900 text-white border-slate-900' },
+  in_progress: { label: 'Sedang Take', badgeClass: 'bg-slate-800 text-slate-100 border-slate-700' },
+  completed: { label: 'Selesai', badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  cancelled: { label: 'Dibatalkan', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
 };
 
 function formatDateTimeLocal(d: Date): string {
@@ -68,14 +70,12 @@ export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [selectedDayNumber, setSelectedDayNumber] = useState<number | null>(() => new Date().getDate());
-  const [viewMode, setViewMode] = useState<'month' | 'agenda'>('month');
   const [filterType, setFilterType] = useState<'all' | 'post' | 'shooting'>('all');
   const [filterPlatform, setFilterPlatform] = useState<string>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Selected Detail Modal / Inspector
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  const [activeMediaIndex, setActiveMediaIndex] = useState<number>(0);
 
   // Unified Schedule Modal state
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -89,8 +89,6 @@ export default function CalendarPage() {
     return formatDateTimeLocal(d);
   });
   const [postPlatform, setPostPlatform] = useState('instagram');
-  const [kanbanIdeas, setKanbanIdeas] = useState<{ id: string; title: string; content?: string }[]>([]);
-  const [selectedIdeaId, setSelectedIdeaId] = useState<string>('');
 
   // Shooting Session Form state
   const [shootTitle, setShootTitle] = useState('');
@@ -117,7 +115,7 @@ export default function CalendarPage() {
   
   const [equipmentList, setEquipmentList] = useState<ShootingEquipmentItem[]>([
     { item: 'Kamera Utama (Sony A7IV)', checked: true },
-    { item: 'Mic Wireless Rode / DJI', checked: true },
+    { item: 'Mic Wireless Clip-on', checked: true },
     { item: 'Lighting Softbox & RGB', checked: false },
   ]);
   const [newEquipmentItem, setNewEquipmentItem] = useState('');
@@ -135,17 +133,9 @@ export default function CalendarPage() {
       const startDate = new Date(year, month - 1, 1).toISOString();
       const endDate = new Date(year, month + 2, 0).toISOString();
       
-      const [calData, kanbanData] = await Promise.all([
-        api.getCalendarEvents({ start_date: startDate, end_date: endDate }),
-        api.getKanbanIdeas().catch(() => ({ columns: [] })),
-      ]);
-
+      const calData = await api.getCalendarEvents({ start_date: startDate, end_date: endDate });
       if (calData && calData.events) {
         setEvents(calData.events);
-      }
-      if (kanbanData && kanbanData.columns) {
-        const allCards = kanbanData.columns.flatMap((col: any) => col.cards || []);
-        setKanbanIdeas(allCards);
       }
     } catch (err: any) {
       toast.error('Gagal Memuat Kalender', err.message || 'Tidak dapat terhubung ke server.');
@@ -183,6 +173,9 @@ export default function CalendarPage() {
     const today = new Date();
     setCurrentDate(today);
     setSelectedDayNumber(today.getDate());
+    const targetDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 10, 0, 0);
+    setPostDate(formatDateTimeLocal(targetDate));
+    setShootScheduledAt(formatDateTimeLocal(targetDate));
   };
 
   // Date selection & auto-prefill handler
@@ -205,11 +198,9 @@ export default function CalendarPage() {
 
   // Filtered events
   const filteredEvents = events.filter((ev) => {
-    // Filter Type: all / post / shooting
     if (filterType === 'post' && ev.type === 'shooting') return false;
     if (filterType === 'shooting' && ev.type !== 'shooting') return false;
 
-    // Filter Platform
     if (filterPlatform !== 'all') {
       if (ev.type === 'shooting') return filterPlatform === 'shooting';
       return ev.platforms && ev.platforms.includes(filterPlatform);
@@ -279,7 +270,6 @@ export default function CalendarPage() {
     const newDate = new Date(year, month, targetDay, origHours, origMinutes);
     const newIsoString = newDate.toISOString();
 
-    // If dropped on the same day, ignore
     if (origDate.getDate() === targetDay && origDate.getMonth() === month && origDate.getFullYear() === year) {
       dragDataRef.current = null;
       return;
@@ -295,7 +285,7 @@ export default function CalendarPage() {
         await api.rescheduleShootingSession(eventId, newIsoString);
         toast.success(
           'Sesi Shooting Dipindahkan',
-          `Jadwal shooting berhasil digeser ke tanggal ${targetDay} ${MONTH_NAMES[month]} ${year}.`
+          `Jadwal shooting berhasil dipindahkan ke tanggal ${targetDay} ${MONTH_NAMES[month]} ${year}.`
         );
       } else {
         await api.reschedulePost(eventId, newIsoString);
@@ -405,7 +395,6 @@ export default function CalendarPage() {
       idx === itemIdx ? { ...item, checked: !item.checked } : item
     );
 
-    // Optimistic update
     const updatedEvent = { ...selectedEvent, equipment_checklist: updatedChecklist };
     setSelectedEvent(updatedEvent);
     setEvents((prev) => prev.map((ev) => (ev.id === selectedEvent.id ? updatedEvent : ev)));
@@ -448,107 +437,75 @@ export default function CalendarPage() {
   const isCurrentMonthThisMonth = todayObj.getMonth() === month && todayObj.getFullYear() === year;
 
   return (
-    <div className="space-y-4 max-w-full">
-      {/* Top Header & Action Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-slate-900 text-white flex items-center justify-center shadow-xs">
-            <CalendarIcon className="w-5 h-5 text-indigo-400" />
+    <div className="space-y-3 max-w-full">
+      {/* Header & Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-md bg-slate-900 text-white flex items-center justify-center">
+            <CalendarIcon className="w-4 h-4 text-slate-100" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-                Kalender Konten & Sesi Shooting
-              </h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                v2.1 Production
-              </span>
-            </div>
-            <p className="text-xs text-slate-500">
-              Kelola timeline postingan media sosial dan rencana produksi shooting studio dalam satu tempat.
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+              Kalender Konten & Sesi Shooting
+            </h1>
+            <p className="text-[11px] text-slate-500">
+              Jadwal postingan media sosial dan rencana produksi shooting studio.
             </p>
           </div>
         </div>
 
-        {/* Right Navigation & Action Buttons */}
+        {/* Month Navigation & Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-          {/* Month Navigation Control */}
-          <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 p-0.5">
+          <div className="flex items-center bg-slate-50 rounded-md border border-slate-200 p-0.5">
             <button
               type="button"
               onClick={prevMonth}
-              className="p-1.5 hover:bg-white rounded-md text-slate-600 hover:text-slate-900 transition"
+              className="p-1 hover:bg-white rounded text-slate-600 hover:text-slate-900 transition"
               title="Bulan Sebelumnya"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
               onClick={goToToday}
-              className="px-3 py-1 text-xs font-bold text-slate-900 hover:bg-white rounded-md transition tracking-tight"
+              className="px-2.5 py-0.5 text-xs font-semibold text-slate-900 hover:bg-white rounded transition"
             >
               {MONTH_NAMES[month]} {year}
             </button>
             <button
               type="button"
               onClick={nextMonth}
-              className="p-1.5 hover:bg-white rounded-md text-slate-600 hover:text-slate-900 transition"
+              className="p-1 hover:bg-white rounded text-slate-600 hover:text-slate-900 transition"
               title="Bulan Berikutnya"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* View Mode Toggle */}
-          <div className="hidden md:flex items-center bg-slate-100 rounded-lg p-0.5 text-xs font-medium text-slate-600">
-            <button
-              type="button"
-              onClick={() => setViewMode('month')}
-              className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 ${
-                viewMode === 'month' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'hover:text-slate-900'
-              }`}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span>Grid Kalender</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('agenda')}
-              className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 ${
-                viewMode === 'agenda' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'hover:text-slate-900'
-              }`}
-            >
-              <ListCheck className="w-3.5 h-3.5" />
-              <span>Agenda List</span>
-            </button>
-          </div>
-
-          {/* Add Schedule Button */}
           <button
             type="button"
             onClick={() => handleDateClick(selectedDayNumber || todayObj.getDate(), true)}
-            className="ui-btn ui-btn-primary py-2 px-3 text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+            className="ui-btn ui-btn-primary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5"
           >
-            <Plus className="w-4 h-4" />
-            <span>Tambah Jadwal / Shooting</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>Tambah Jadwal</span>
           </button>
         </div>
       </div>
 
-      {/* Category & Channel Filter Bar */}
-      <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
-        {/* Category Type Pills */}
+      {/* Filter Bar */}
+      <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2.5 text-xs">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[11px] font-semibold text-slate-500 mr-1 flex items-center gap-1">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <span>Tipe:</span>
+            <Filter className="w-3 h-3 text-slate-400" />
+            <span>Filter:</span>
           </span>
           <button
             type="button"
             onClick={() => setFilterType('all')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+            className={`px-2.5 py-1 rounded text-xs font-medium transition ${
               filterType === 'all'
-                ? 'bg-slate-900 text-white font-semibold shadow-xs'
+                ? 'bg-slate-900 text-white font-semibold'
                 : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
             }`}
           >
@@ -557,31 +514,31 @@ export default function CalendarPage() {
           <button
             type="button"
             onClick={() => setFilterType('post')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition ${
+            className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
               filterType === 'post'
-                ? 'bg-indigo-600 text-white font-semibold shadow-xs'
-                : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                ? 'bg-slate-900 text-white font-semibold'
+                : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
             }`}
           >
-            <Share2 className="w-3.5 h-3.5" />
-            <span>📱 Post Medsos ({events.filter((e) => e.type !== 'shooting').length})</span>
+            <Share2 className="w-3 h-3" />
+            <span>Post Medsos ({events.filter((e) => e.type !== 'shooting').length})</span>
           </button>
           <button
             type="button"
             onClick={() => setFilterType('shooting')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition ${
+            className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
               filterType === 'shooting'
-                ? 'bg-emerald-600 text-white font-semibold shadow-xs'
-                : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                ? 'bg-slate-900 text-white font-semibold'
+                : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
             }`}
           >
-            <Clapperboard className="w-3.5 h-3.5" />
-            <span>🎬 Sesi Shooting ({events.filter((e) => e.type === 'shooting').length})</span>
+            <Clapperboard className="w-3 h-3" />
+            <span>Sesi Shooting ({events.filter((e) => e.type === 'shooting').length})</span>
           </button>
         </div>
 
-        {/* Platform Pills */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Platform Filter Pills */}
+        <div className="flex items-center gap-1 flex-wrap">
           {['all', 'instagram', 'tiktok', 'linkedin', 'facebook', 'youtube'].map((plat) => (
             <button
               key={plat}
@@ -606,20 +563,21 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Main Expansive Calendar Grid Layout */}
-      {viewMode === 'month' ? (
-        <div className="ui-card p-0 overflow-hidden shadow-sm border border-slate-200 rounded-xl bg-white">
+      {/* Main 2-Column Split: Calendar (Left) & Dedicated Day Inspector (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-start">
+        {/* Left Column: Calendar Grid (8 Cols) */}
+        <div className="lg:col-span-8 ui-card p-0 overflow-hidden border border-slate-200 rounded-lg bg-white shadow-xs">
           {/* Days Header */}
-          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/90 text-center py-2.5 text-xs font-bold text-slate-700">
+          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center py-2 text-xs font-semibold text-slate-600">
             {DAYS.map((dayName, idx) => (
-              <div key={dayName} className="flex flex-col items-center">
-                <span className="hidden md:inline">{dayName}</span>
-                <span className="md:hidden">{DAYS_SHORT[idx]}</span>
+              <div key={dayName}>
+                <span className="hidden sm:inline">{dayName}</span>
+                <span className="sm:hidden">{DAYS_SHORT[idx]}</span>
               </div>
             ))}
           </div>
 
-          {/* Month Day Cells Grid (Expansive & Responsive) */}
+          {/* Month Day Cells */}
           <div className="grid grid-cols-7 divide-x divide-y divide-slate-200 bg-white">
             {calendarCells.map((cell, idx) => {
               const isToday =
@@ -648,29 +606,29 @@ export default function CalendarPage() {
                   onDragOver={(e) => (cell.isCurrent ? handleCellDragOver(e, cell.day) : undefined)}
                   onDragLeave={cell.isCurrent ? handleCellDragLeave : undefined}
                   onDrop={(e) => (cell.isCurrent ? handleCellDrop(e, cell.day) : undefined)}
-                  className={`min-h-[90px] sm:min-h-[115px] lg:min-h-[125px] p-2 flex flex-col justify-between cursor-pointer transition-all duration-150 relative group select-none ${
+                  className={`h-20 sm:h-24 p-1.5 flex flex-col justify-between cursor-pointer transition-all duration-150 relative group select-none ${
                     !cell.isCurrent
-                      ? 'bg-slate-50/50 opacity-30 cursor-default'
+                      ? 'bg-slate-50/40 opacity-30 cursor-default'
                       : isDragTarget
-                      ? 'bg-blue-50/90 ring-2 ring-inset ring-blue-500 shadow-inner'
+                      ? 'bg-slate-100 ring-2 ring-inset ring-slate-400 shadow-inner'
                       : isSelected
-                      ? 'bg-indigo-50/40 ring-1 ring-inset ring-indigo-300'
+                      ? 'bg-slate-100/90 font-medium ring-1 ring-inset ring-slate-300'
                       : isToday
-                      ? 'bg-amber-50/30'
-                      : 'hover:bg-slate-50/80'
+                      ? 'bg-slate-50/80'
+                      : 'hover:bg-slate-50/70'
                   }`}
                 >
-                  {/* Cell Top Header */}
-                  <div className="flex items-center justify-between mb-1">
+                  {/* Top Day Number Row */}
+                  <div className="flex items-center justify-between">
                     <span
                       className={`inline-flex items-center justify-center text-xs transition ${
                         isToday
-                          ? 'w-6 h-6 rounded-full bg-slate-900 text-white font-bold shadow-xs'
+                          ? 'w-5 h-5 rounded-full bg-slate-900 text-white font-bold text-[10px]'
                           : isSelected
-                          ? 'w-6 h-6 rounded-full bg-indigo-600 text-white font-bold shadow-xs'
+                          ? 'w-5 h-5 rounded-full bg-slate-700 text-white font-bold text-[10px]'
                           : cell.isCurrent
-                          ? 'text-slate-800 font-semibold text-xs'
-                          : 'text-slate-400'
+                          ? 'text-slate-800 font-medium pl-0.5 text-xs'
+                          : 'text-slate-400 pl-0.5'
                       }`}
                     >
                       {cell.day}
@@ -684,19 +642,18 @@ export default function CalendarPage() {
                           e.stopPropagation();
                           handleDateClick(cell.day, true);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded-md bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 shadow-xs transition"
-                        title={`Tambah Jadwal pada tanggal ${cell.day} ${MONTH_NAMES[month]}`}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded bg-white border border-slate-200 text-slate-600 hover:text-slate-900 transition shadow-2xs"
+                        title="Tambah jadwal"
                       >
-                        <Plus className="w-3 h-3 text-indigo-600" />
+                        <Plus className="w-3 h-3" />
                       </button>
                     )}
                   </div>
 
-                  {/* Cell Events List (Cards) */}
-                  <div className="space-y-1 overflow-y-auto max-h-[85px] sm:max-h-[95px] pr-0.5 custom-scrollbar">
-                    {cellEvents.map((ev) => {
+                  {/* Cell Events Badges (Draggable) */}
+                  <div className="space-y-1 overflow-y-auto max-h-[50px] sm:max-h-[60px] pr-0.5">
+                    {cellEvents.slice(0, 2).map((ev) => {
                       const isShooting = ev.type === 'shooting';
-                      const shootConf = SHOOTING_STATUS_CONFIG[ev.status] || SHOOTING_STATUS_CONFIG.planned;
 
                       return (
                         <div
@@ -708,236 +665,244 @@ export default function CalendarPage() {
                             e.stopPropagation();
                             setSelectedEvent(ev);
                           }}
-                          className={`p-1.5 rounded-md border text-[11px] leading-tight transition cursor-grab active:cursor-grabbing hover:shadow-xs flex items-center gap-1.5 ${
+                          className={`px-1.5 py-0.5 rounded border text-[10px] leading-tight transition cursor-grab active:cursor-grabbing truncate flex items-center gap-1 ${
                             isShooting
-                              ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 font-medium hover:bg-emerald-100'
-                              : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-white hover:border-slate-300 font-normal'
+                              ? 'bg-slate-100 border-slate-300 text-slate-900 font-semibold'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                           }`}
-                          title={`${ev.title} — Klik untuk detail / Geser untuk pindah tanggal`}
+                          title={`${ev.title} (Geser untuk pindah)`}
                         >
                           {isShooting ? (
-                            <Clapperboard className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <Clapperboard className="w-2.5 h-2.5 text-slate-800 shrink-0" />
                           ) : (
-                            <div className="flex items-center gap-0.5 shrink-0">
+                            <div className="shrink-0 flex items-center">
                               {ev.platforms && ev.platforms.length > 0 && (
-                                <SocialIcon platform={ev.platforms[0]} size={11} />
+                                <SocialIcon platform={ev.platforms[0]} size={9} />
                               )}
                             </div>
                           )}
 
-                          <span className="truncate flex-1 font-semibold text-[10.5px]">
+                          <span className="truncate flex-1 font-medium text-[9.5px]">
                             {ev.title}
-                          </span>
-
-                          <span className="text-[9.5px] text-slate-500 font-mono shrink-0">
-                            {ev.start
-                              ? new Date(ev.start).toLocaleTimeString('id-ID', {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
-                              : ''}
                           </span>
                         </div>
                       );
                     })}
-                  </div>
 
-                  {/* Empty state indicator if no events */}
-                  {cell.isCurrent && cellEvents.length === 0 && (
-                    <div className="text-[10px] text-slate-300 italic pt-1 pointer-events-none hidden sm:block">
-                      Kosong
-                    </div>
-                  )}
+                    {cellEvents.length > 2 && (
+                      <div className="text-[9px] text-slate-500 font-semibold pl-1">
+                        +{cellEvents.length - 2} lainnya
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
-      ) : (
-        /* Agenda List View Mode */
-        <div className="ui-card p-4 space-y-3 bg-white border border-slate-200 rounded-xl">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <CalendarRange className="w-4 h-4 text-indigo-600" />
-              <span>Daftar Agenda {MONTH_NAMES[month]} {year}</span>
-            </h2>
-            <span className="text-xs text-slate-500 font-medium">
-              Total {filteredEvents.length} agenda ditemukan
-            </span>
-          </div>
 
-          <div className="divide-y divide-slate-100">
-            {filteredEvents.length > 0 ? (
-              filteredEvents.map((ev) => (
-                <div
-                  key={ev.id}
-                  onClick={() => setSelectedEvent(ev)}
-                  className="py-3 px-2 hover:bg-slate-50 rounded-lg transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="flex items-start gap-3">
+        {/* Right Column: Dedicated Day Agenda & Inspector Panel (4 Cols) */}
+        <div className="lg:col-span-4 space-y-3">
+          <div className="ui-card p-3.5 space-y-3 bg-white border border-slate-200 rounded-lg shadow-xs">
+            {/* Selected Date Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-slate-700" />
+                <div>
+                  <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    {selectedDayNumber
+                      ? `${selectedDayNumber} ${MONTH_NAMES[month]} ${year}`
+                      : 'Semua Agenda'}
+                  </h2>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {activeDateEvents.length} Agenda Terjadwal
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleDateClick(selectedDayNumber || todayObj.getDate(), true)}
+                className="ui-btn ui-btn-secondary py-1 px-2 text-[11px] font-medium flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Tambah</span>
+              </button>
+            </div>
+
+            {/* Agenda List for Selected Day */}
+            <div className="space-y-2 max-h-[460px] overflow-y-auto pr-0.5">
+              {activeDateEvents.length > 0 ? (
+                activeDateEvents.map((ev) => {
+                  const isShooting = ev.type === 'shooting';
+                  const shootConf = SHOOTING_STATUS_CONFIG[ev.status] || SHOOTING_STATUS_CONFIG.planned;
+
+                  return (
                     <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                        ev.type === 'shooting'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-indigo-100 text-indigo-700'
-                      }`}
+                      key={ev.id}
+                      onClick={() => setSelectedEvent(ev)}
+                      className="p-2.5 rounded-md border border-slate-200 hover:border-slate-300 hover:bg-slate-50/70 transition cursor-pointer space-y-1.5 text-xs bg-white shadow-2xs"
                     >
-                      {ev.type === 'shooting' ? (
-                        <Clapperboard className="w-5 h-5" />
-                      ) : (
-                        <SocialIcon platform={ev.platforms[0] || 'instagram'} size={18} />
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-xs font-bold text-slate-900">{ev.title}</h3>
-                        {ev.type === 'shooting' ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            🎬 Sesi Shooting
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {isShooting ? (
+                            <Clapperboard className="w-3.5 h-3.5 text-slate-800 shrink-0" />
+                          ) : (
+                            <div className="shrink-0 flex items-center">
+                              {ev.platforms && ev.platforms.length > 0 && (
+                                <SocialIcon platform={ev.platforms[0]} size={12} />
+                              )}
+                            </div>
+                          )}
+                          <span className="font-semibold text-slate-900 truncate text-xs">
+                            {ev.title}
+                          </span>
+                        </div>
+
+                        {isShooting ? (
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-semibold border ${shootConf.badgeClass}`}>
+                            {shootConf.label}
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
                             {ev.platforms.join(', ').toUpperCase()}
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
+
+                      {/* Time & Location */}
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
                         <span className="flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          <Clock className="w-3 h-3 text-slate-400" />
                           <span>
                             {ev.start
-                              ? new Date(ev.start).toLocaleDateString('id-ID', {
-                                  weekday: 'long',
-                                  day: 'numeric',
-                                  month: 'short',
+                              ? new Date(ev.start).toLocaleTimeString('id-ID', {
                                   hour: '2-digit',
                                   minute: '2-digit',
                                 })
                               : '-'}
                           </span>
                         </span>
+
                         {ev.location && (
-                          <span className="flex items-center gap-1 text-slate-600">
-                            <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                          <span className="flex items-center gap-1 text-slate-600 truncate max-w-[130px]">
+                            <MapPin className="w-3 h-3 text-slate-400" />
                             <span>{ev.location}</span>
                           </span>
                         )}
                       </div>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-center">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedEvent(ev);
-                      }}
-                      className="ui-btn ui-btn-secondary py-1 px-2.5 text-xs flex items-center gap-1"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Detail</span>
-                    </button>
-                  </div>
+                      {/* Brief description snippet */}
+                      {(ev.caption || ev.description) && (
+                        <p className="text-[10.5px] text-slate-600 line-clamp-2 bg-slate-50 p-1.5 rounded border border-slate-100">
+                          {ev.caption || ev.description}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="py-8 text-center text-slate-400 space-y-2">
+                  <CalendarIcon className="w-6 h-6 mx-auto text-slate-300" />
+                  <p className="text-xs">Tidak ada agenda pada tanggal ini.</p>
+                  <button
+                    type="button"
+                    onClick={() => handleDateClick(selectedDayNumber || todayObj.getDate(), true)}
+                    className="text-[11px] font-semibold text-slate-800 hover:underline"
+                  >
+                    + Tambah Jadwal Sekarang
+                  </button>
                 </div>
-              ))
-            ) : (
-              <div className="py-12 text-center text-slate-400">
-                <CalendarIcon className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                <p className="text-xs">Tidak ada agenda pada bulan ini.</p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* ========================================================================= */}
       {/* MODAL 1: UNIFIED SCHEDULE MODAL (Tabs: Social Post & Shooting Session)   */}
       {/* ========================================================================= */}
       {isScheduleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg border border-slate-200 shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-                  <Plus className="w-4 h-4" />
+                <div className="w-7 h-7 rounded bg-slate-900 text-white flex items-center justify-center">
+                  <Plus className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-slate-900">Tambah Agenda Baru</h2>
-                  <p className="text-[11px] text-slate-500">
-                    Otomatis dijadwalkan pada tanggal terpilih:{' '}
-                    <strong className="text-indigo-600">
-                      {selectedDayNumber} {MONTH_NAMES[month]} {year}
-                    </strong>
+                  <h2 className="text-xs font-bold text-slate-900">Tambah Agenda</h2>
+                  <p className="text-[10px] text-slate-500">
+                    Dijadwalkan untuk tanggal: {selectedDayNumber} {MONTH_NAMES[month]} {year}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsScheduleModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Tab Selector */}
-            <div className="flex border-b border-slate-200 bg-slate-100/70 p-1">
+            <div className="flex border-b border-slate-200 bg-slate-100/60 p-1 text-xs">
               <button
                 type="button"
                 onClick={() => setActiveScheduleTab('post')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
+                className={`flex-1 py-1.5 rounded text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
                   activeScheduleTab === 'post'
-                    ? 'bg-white text-indigo-700 shadow-xs'
+                    ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 <Share2 className="w-3.5 h-3.5" />
-                <span>1. Jadwal Postingan Medsos</span>
+                <span>Postingan Media Sosial</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveScheduleTab('shooting')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
+                className={`flex-1 py-1.5 rounded text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
                   activeScheduleTab === 'shooting'
-                    ? 'bg-white text-emerald-700 shadow-xs'
+                    ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 <Clapperboard className="w-3.5 h-3.5" />
-                <span>2. Rencana Sesi Shooting 🎬</span>
+                <span>Rencana Sesi Shooting</span>
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-5">
+            <div className="p-4">
               {activeScheduleTab === 'post' ? (
                 /* TAB 1: SOCIAL POST FORM */
-                <form onSubmit={handlePostSubmit} className="space-y-4">
+                <form onSubmit={handlePostSubmit} className="space-y-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Konten / Caption Utama
                     </label>
                     <textarea
                       rows={3}
                       value={postCaption}
                       onChange={(e) => setPostCaption(e.target.value)}
-                      placeholder="Tulis draf caption konten Anda di sini..."
-                      className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition bg-slate-50 focus:bg-white"
+                      placeholder="Tulis draf caption konten..."
+                      className="w-full text-xs p-2 rounded-md border border-slate-200 focus:outline-none focus:border-slate-400 bg-slate-50 focus:bg-white"
                       required
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
                         Saluran Target
                       </label>
                       <select
                         value={postPlatform}
                         onChange={(e) => setPostPlatform(e.target.value)}
-                        className="w-full text-xs p-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
                       >
                         <option value="instagram">Instagram</option>
                         <option value="tiktok">TikTok</option>
@@ -948,30 +913,30 @@ export default function CalendarPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Waktu Tayang (Otomatis Prefill)
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Waktu Tayang (Otomatis)
                       </label>
                       <input
                         type="datetime-local"
                         value={postDate}
                         onChange={(e) => setPostDate(e.target.value)}
-                        className="w-full text-xs p-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 font-mono"
                         required
                       />
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => setIsScheduleModalOpen(false)}
-                      className="ui-btn ui-btn-secondary py-2 text-xs"
+                      className="ui-btn ui-btn-secondary py-1.5 text-xs"
                     >
                       Batal
                     </button>
                     <button
                       type="submit"
-                      className="ui-btn ui-btn-primary py-2 px-4 text-xs font-bold flex items-center gap-1.5"
+                      className="ui-btn ui-btn-primary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Jadwalkan Postingan</span>
@@ -980,9 +945,9 @@ export default function CalendarPage() {
                 </form>
               ) : (
                 /* TAB 2: SHOOTING SESSION FORM */
-                <form onSubmit={handleShootingSubmit} className="space-y-3.5 max-h-[65vh] overflow-y-auto pr-1">
+                <form onSubmit={handleShootingSubmit} className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Judul Sesi Shooting <span className="text-rose-500">*</span>
                     </label>
                     <input
@@ -990,34 +955,34 @@ export default function CalendarPage() {
                       value={shootTitle}
                       onChange={(e) => setShootTitle(e.target.value)}
                       placeholder="Contoh: Shooting Video Reels Edukasi Ep. 12"
-                      className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white"
+                      className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
                       required
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                      <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-slate-500" />
                         <span>Lokasi Shooting</span>
                       </label>
                       <input
                         type="text"
                         value={shootLocation}
                         onChange={(e) => setShootLocation(e.target.value)}
-                        placeholder="Studio Utama WIG / Outdoor Tebet"
-                        className="w-full text-xs p-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="Studio Utama WIG / Outdoor"
+                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
                         Status Produksi
                       </label>
                       <select
                         value={shootStatus}
                         onChange={(e) => setShootStatus(e.target.value)}
-                        className="w-full text-xs p-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
                       >
                         <option value="planned">Rencana</option>
                         <option value="confirmed">Terkonfirmasi</option>
@@ -1027,65 +992,65 @@ export default function CalendarPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
                         Mulai Jam
                       </label>
                       <input
                         type="datetime-local"
                         value={shootScheduledAt}
                         onChange={(e) => setShootScheduledAt(e.target.value)}
-                        className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-slate-50 font-mono"
+                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 font-mono"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
                         Selesai Estimasi
                       </label>
                       <input
                         type="datetime-local"
                         value={shootEndAt}
                         onChange={(e) => setShootEndAt(e.target.value)}
-                        className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-slate-50 font-mono"
+                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 font-mono"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Brief / Konsep / Catatan Produksi
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Brief & Catatan Produksi
                     </label>
                     <textarea
                       rows={2}
                       value={shootDescription}
                       onChange={(e) => setShootDescription(e.target.value)}
-                      placeholder="Konsep visual, alur skrip, atau catatan penting untuk talent & tim..."
-                      className="w-full text-xs p-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="Konsep visual, skrip singkat, atau catatan..."
+                      className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
                     />
                   </div>
 
-                  {/* Dynamic Crew & Equipment */}
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-indigo-600" />
+                  {/* Crew & Equipment */}
+                  <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5 text-slate-700" />
                       <span>Kru & Talent Terlibat</span>
                     </span>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1.5">
                       <input
                         type="text"
                         value={newCrewName}
                         onChange={(e) => setNewCrewName(e.target.value)}
-                        placeholder="Nama talent / kru..."
-                        className="flex-1 text-xs p-1.5 rounded-md border border-slate-200 bg-white"
+                        placeholder="Nama kru / talent..."
+                        className="flex-1 text-xs p-1.5 rounded border border-slate-200 bg-white"
                       />
                       <input
                         type="text"
                         value={newCrewRole}
                         onChange={(e) => setNewCrewRole(e.target.value)}
-                        placeholder="Peran (Videografer/Talent)"
-                        className="w-36 text-xs p-1.5 rounded-md border border-slate-200 bg-white"
+                        placeholder="Peran"
+                        className="w-28 text-xs p-1.5 rounded border border-slate-200 bg-white"
                       />
                       <button
                         type="button"
@@ -1094,23 +1059,23 @@ export default function CalendarPage() {
                           setCrewList((prev) => [...prev, { name: newCrewName, role: newCrewRole }]);
                           setNewCrewName('');
                         }}
-                        className="px-2.5 py-1 bg-slate-800 text-white rounded-md text-xs font-semibold hover:bg-slate-900"
+                        className="px-2 py-1 bg-slate-900 text-white rounded text-xs font-medium hover:bg-slate-800"
                       >
                         + Tambah
                       </button>
                     </div>
 
-                    <div className="flex flex-wrap gap-1.5 pt-1">
+                    <div className="flex flex-wrap gap-1">
                       {crewList.map((c, i) => (
                         <span
                           key={i}
-                          className="px-2 py-0.5 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 flex items-center gap-1"
+                          className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] text-slate-700 flex items-center gap-1"
                         >
                           <strong>{c.name}</strong> ({c.role})
                           <button
                             type="button"
                             onClick={() => setCrewList((prev) => prev.filter((_, idx) => idx !== i))}
-                            className="text-slate-400 hover:text-rose-500 ml-1"
+                            className="text-slate-400 hover:text-rose-500 ml-0.5"
                           >
                             ×
                           </button>
@@ -1119,17 +1084,17 @@ export default function CalendarPage() {
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => setIsScheduleModalOpen(false)}
-                      className="ui-btn ui-btn-secondary py-2 text-xs"
+                      className="ui-btn ui-btn-secondary py-1.5 text-xs"
                     >
                       Batal
                     </button>
                     <button
                       type="submit"
-                      className="ui-btn bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                      className="ui-btn ui-btn-primary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5"
                     >
                       <Clapperboard className="w-3.5 h-3.5" />
                       <span>Simpan Sesi Shooting</span>
@@ -1146,38 +1111,26 @@ export default function CalendarPage() {
       {/* MODAL 2: EVENT DETAIL INSPECTOR (Post & Shooting Session)                 */}
       {/* ========================================================================= */}
       {selectedEvent && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-lg border border-slate-200 shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
-            <div
-              className={`px-5 py-4 border-b flex items-center justify-between ${
-                selectedEvent.type === 'shooting'
-                  ? 'bg-emerald-50/80 border-emerald-200'
-                  : 'bg-slate-50 border-slate-200'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <div
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    selectedEvent.type === 'shooting'
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-indigo-600 text-white'
-                  }`}
-                >
+            <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded bg-slate-900 text-white flex items-center justify-center">
                   {selectedEvent.type === 'shooting' ? (
-                    <Clapperboard className="w-4 h-4" />
+                    <Clapperboard className="w-3.5 h-3.5" />
                   ) : (
-                    <Share2 className="w-4 h-4" />
+                    <Share2 className="w-3.5 h-3.5" />
                   )}
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">
+                  <h3 className="text-xs font-bold text-slate-900">
                     {selectedEvent.type === 'shooting'
                       ? 'Detail Sesi Shooting'
-                      : 'Detail Postingan Medsos'}
+                      : 'Detail Postingan Terjadwal'}
                   </h3>
-                  <span className="text-[11px] text-slate-500 font-mono">
-                    ID: {selectedEvent.id.slice(0, 18)}...
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    ID: {selectedEvent.id.slice(0, 16)}...
                   </span>
                 </div>
               </div>
@@ -1185,34 +1138,29 @@ export default function CalendarPage() {
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Body Content */}
-            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            {/* Body */}
+            <div className="p-4 space-y-3 max-h-[65vh] overflow-y-auto text-xs">
               <div>
-                <h4 className="text-base font-bold text-slate-900">{selectedEvent.title}</h4>
-                {selectedEvent.caption && (
-                  <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap bg-slate-50 p-3 rounded-lg border border-slate-200">
-                    {selectedEvent.caption}
-                  </p>
-                )}
-                {selectedEvent.description && (
-                  <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap bg-emerald-50/40 p-3 rounded-lg border border-emerald-200">
-                    {selectedEvent.description}
+                <h4 className="text-xs font-bold text-slate-900">{selectedEvent.title}</h4>
+                {(selectedEvent.caption || selectedEvent.description) && (
+                  <p className="text-[11px] text-slate-600 mt-1 whitespace-pre-wrap bg-slate-50 p-2.5 rounded border border-slate-200">
+                    {selectedEvent.caption || selectedEvent.description}
                   </p>
                 )}
               </div>
 
-              {/* Time & Location Metadata */}
-              <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
+              {/* Time & Location */}
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200 text-[11px]">
                 <div>
-                  <span className="text-[11px] text-slate-400 font-medium block">Waktu Pelaksanaan</span>
+                  <span className="text-slate-400 font-medium block text-[10px]">Waktu</span>
                   <span className="font-semibold text-slate-800 flex items-center gap-1 mt-0.5">
-                    <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                    <Clock className="w-3 h-3 text-slate-500" />
                     <span>
                       {selectedEvent.start
                         ? new Date(selectedEvent.start).toLocaleString('id-ID', {
@@ -1229,36 +1177,36 @@ export default function CalendarPage() {
 
                 {selectedEvent.location && (
                   <div>
-                    <span className="text-[11px] text-slate-400 font-medium block">Lokasi Studio</span>
-                    <span className="font-semibold text-slate-800 flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                    <span className="text-slate-400 font-medium block text-[10px]">Lokasi</span>
+                    <span className="font-semibold text-slate-800 flex items-center gap-1 mt-0.5 truncate">
+                      <MapPin className="w-3 h-3 text-slate-500" />
                       <span>{selectedEvent.location}</span>
                     </span>
                   </div>
                 )}
               </div>
 
-              {/* Interactive Equipment Checklist (Shooting Only) */}
+              {/* Equipment checklist (Shooting Only) */}
               {selectedEvent.type === 'shooting' &&
                 selectedEvent.equipment_checklist &&
                 selectedEvent.equipment_checklist.length > 0 && (
-                  <div className="space-y-2">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Checklist Peralatan & Properti (Klik untuk Check/Uncheck)</span>
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                      <CheckSquare className="w-3.5 h-3.5 text-slate-700" />
+                      <span>Checklist Peralatan (Klik untuk centang)</span>
                     </span>
-                    <div className="space-y-1 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div className="space-y-1 bg-slate-50 p-2.5 rounded border border-slate-200">
                       {selectedEvent.equipment_checklist.map((eq, idx) => (
                         <button
                           key={idx}
                           type="button"
                           onClick={() => handleToggleEquipment(idx)}
-                          className="w-full flex items-center gap-2 p-1.5 rounded-md hover:bg-white text-left transition text-xs select-none"
+                          className="w-full flex items-center gap-2 p-1 rounded hover:bg-white text-left transition text-[11px] select-none"
                         >
                           {eq.checked ? (
-                            <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <CheckSquare className="w-3.5 h-3.5 text-slate-900 shrink-0" />
                           ) : (
-                            <Square className="w-4 h-4 text-slate-400 shrink-0" />
+                            <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                           )}
                           <span
                             className={
@@ -1278,15 +1226,15 @@ export default function CalendarPage() {
                 selectedEvent.crew_members &&
                 selectedEvent.crew_members.length > 0 && (
                   <div>
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-1.5">
-                      <Users className="w-3.5 h-3.5 text-indigo-600" />
+                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1 mb-1">
+                      <Users className="w-3.5 h-3.5 text-slate-700" />
                       <span>Daftar Kru & Talent</span>
                     </span>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1">
                       {selectedEvent.crew_members.map((c, i) => (
                         <span
                           key={i}
-                          className="px-2.5 py-1 bg-slate-100 rounded-lg text-xs text-slate-700 font-medium border border-slate-200"
+                          className="px-2 py-0.5 bg-slate-100 rounded text-[10.5px] text-slate-700 font-medium border border-slate-200"
                         >
                           {c.name} <span className="text-slate-400">({c.role})</span>
                         </span>
@@ -1296,21 +1244,21 @@ export default function CalendarPage() {
                 )}
             </div>
 
-            {/* Footer Actions */}
-            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+            {/* Footer */}
+            <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => handleDeleteEvent(selectedEvent)}
-                className="px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition"
+                className="px-2.5 py-1 rounded text-rose-600 hover:bg-rose-50 border border-rose-200 text-xs font-semibold flex items-center gap-1 transition"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Hapus Agenda</span>
+                <Trash2 className="w-3 h-3" />
+                <span>Hapus</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="ui-btn ui-btn-primary py-1.5 px-4 text-xs font-semibold"
+                className="ui-btn ui-btn-primary py-1 px-3 text-xs"
               >
                 Tutup
               </button>
