@@ -694,24 +694,24 @@ export default function SettingsPage() {
 
       {/* MODAL 1: Invite / Add Member Modal */}
       {isInviteModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-lg max-w-md w-full p-5 space-y-4 shadow-xl animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-              <div className="flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-slate-700" />
-                <h3 className="text-xs font-semibold text-slate-900 uppercase tracking-wide">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <UserPlus className="w-5 h-5 text-slate-700" />
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
                   Tambah Anggota Tim Kreatif
                 </h3>
               </div>
               <button
                 onClick={() => setIsInviteModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleInviteSubmit} className="space-y-3">
+            <form onSubmit={handleInviteSubmit} className="space-y-4">
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
                   Nama Lengkap Anggota:
@@ -722,32 +722,32 @@ export default function SettingsPage() {
                   value={inviteName}
                   onChange={(e) => setInviteName(e.target.value)}
                   placeholder="Contoh: Siti Rahmawati"
-                  className="ui-input"
+                  className="ui-input py-2 text-xs"
                 />
               </div>
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Email Perusahaan:
+                  Alamat Email (Digunakan untuk Login):
                 </label>
                 <input
                   type="email"
                   required
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="siti.copywriter@wijayagroup.id"
-                  className="ui-input"
+                  placeholder="nama@wijayainovasi.co.id"
+                  className="ui-input py-2 text-xs font-mono"
                 />
               </div>
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Pilih Role / Hak Akses:
+                  Peran / Hak Akses:
                 </label>
                 <select
                   value={inviteRole}
-                  onChange={(e: any) => setInviteRole(e.target.value)}
-                  className="ui-input"
+                  onChange={(e) => setInviteRole(e.target.value as any)}
+                  className="ui-input py-2 text-xs"
                 >
                   <option value="manager">Manager (Head of Creative / Lead)</option>
                   <option value="editor">Editor (Copywriter / Content Creator)</option>
@@ -757,12 +757,10 @@ export default function SettingsPage() {
                 </select>
               </div>
 
-              {/* Password Input with Generate Button */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2">
+              <div className="space-y-2 pt-1 border-t border-slate-100">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                    <KeyRound className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Kata Sandi Akun Awal:</span>
+                  <label className="text-xs font-semibold text-slate-700">
+                    Kata Sandi Awal:
                   </label>
                   <button
                     type="button"
@@ -773,7 +771,6 @@ export default function SettingsPage() {
                     <span>Generate Acak</span>
                   </button>
                 </div>
-
                 <div className="relative">
                   <input
                     type={showInvitePassword ? 'text' : 'password'}
@@ -781,8 +778,8 @@ export default function SettingsPage() {
                     minLength={6}
                     value={invitePassword}
                     onChange={(e) => setInvitePassword(e.target.value)}
-                    placeholder="Masukkan kata sandi (min. 6 karakter)"
-                    className="w-full bg-white border border-slate-200 rounded px-3 py-1.5 pr-10 text-xs font-mono text-slate-800 focus:outline-none focus:border-slate-400"
+                    placeholder="Masukkan kata sandi awal (min. 6 karakter)"
+                    className="w-full bg-white border border-slate-200 rounded px-3 py-2 pr-10 text-xs font-mono text-slate-800 focus:outline-none focus:border-slate-400"
                   />
                   <button
                     type="button"
@@ -792,12 +789,9 @@ export default function SettingsPage() {
                     {showInvitePassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-500">
-                  Kata sandi ini digunakan oleh anggota untuk masuk ke dashboard. Kredensial akan ditampilkan setelah disimpan.
-                </p>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsInviteModalOpen(false)}
@@ -810,7 +804,7 @@ export default function SettingsPage() {
                   disabled={isSubmittingInvite}
                   className="ui-btn ui-btn-primary"
                 >
-                  {isSubmittingInvite ? 'Mendaftarkan...' : 'Tambahkan ke Tim'}
+                  {isSubmittingInvite ? 'Mendaftarkan...' : 'Tambah & Berikan Akses'}
                 </button>
               </div>
             </form>
@@ -820,28 +814,28 @@ export default function SettingsPage() {
 
       {/* MODAL 2: Reset Password Modal */}
       {resetModal.isOpen && resetModal.member && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-lg max-w-md w-full p-5 space-y-4 shadow-xl animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-slate-700" />
-                <h3 className="text-xs font-semibold text-slate-900 uppercase tracking-wide">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <KeyRound className="w-5 h-5 text-slate-700" />
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
                   Reset Kata Sandi Anggota
                 </h3>
               </div>
               <button
                 onClick={() => setResetModal({ isOpen: false, member: null, newPassword: '' })}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleResetPasswordSubmit} className="space-y-3">
-              <div className="p-2.5 bg-slate-50 rounded border border-slate-200 text-xs space-y-1">
+            <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs space-y-1">
                 <p className="text-slate-500">Target Pengguna:</p>
-                <p className="font-semibold text-slate-900">{resetModal.member.name}</p>
-                <p className="text-[11px] font-mono text-slate-600">{resetModal.member.email}</p>
+                <p className="font-semibold text-slate-900 text-sm">{resetModal.member.name}</p>
+                <p className="text-xs font-mono text-slate-600">{resetModal.member.email}</p>
               </div>
 
               <div className="space-y-2">
@@ -877,7 +871,7 @@ export default function SettingsPage() {
                       }))
                     }
                     placeholder="Masukkan kata sandi baru (min. 6 karakter)"
-                    className="w-full bg-white border border-slate-200 rounded px-3 py-1.5 pr-10 text-xs font-mono text-slate-800 focus:outline-none focus:border-slate-400"
+                    className="w-full bg-white border border-slate-200 rounded px-3 py-2 pr-10 text-xs font-mono text-slate-800 focus:outline-none focus:border-slate-400"
                   />
                   <button
                     type="button"
@@ -889,7 +883,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setResetModal({ isOpen: false, member: null, newPassword: '' })}
@@ -912,42 +906,42 @@ export default function SettingsPage() {
 
       {/* MODAL 3: Credential Card Modal (Shown after invite or reset) */}
       {credentialModal.isOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-lg max-w-md w-full p-5 space-y-4 shadow-xl animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-              <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-emerald-600" />
-                <h3 className="text-xs font-semibold text-slate-900 uppercase tracking-wide">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <Check className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
                   Kredensial Login Anggota Tim
                 </h3>
               </div>
               <button
                 onClick={() => setCredentialModal((prev) => ({ ...prev, isOpen: false }))}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-md text-xs text-emerald-800 space-y-1">
-              <p className="font-semibold">Akun telah siap digunakan!</p>
-              <p className="text-[11px] text-emerald-700 leading-relaxed">
+            <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-lg text-xs text-emerald-800 space-y-1">
+              <p className="font-bold text-sm">Akun telah siap digunakan!</p>
+              <p className="text-xs text-emerald-700 leading-relaxed">
                 Salin kredensial di bawah ini dan berikan kepada anggota tim untuk masuk ke sistem Content Plan.
               </p>
             </div>
 
-            <div className="p-3.5 bg-slate-900 rounded-md text-slate-100 font-mono text-xs space-y-2 shadow-inner">
-              <div className="flex justify-between border-b border-slate-800 pb-1.5">
+            <div className="p-4 bg-slate-900 rounded-xl text-slate-100 font-mono text-xs space-y-2.5 shadow-inner">
+              <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-400">Email:</span>
                 <span className="text-white font-semibold select-all">{credentialModal.email}</span>
               </div>
-              <div className="flex justify-between border-b border-slate-800 pb-1.5">
+              <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-400">Kata Sandi:</span>
                 <span className="text-amber-300 font-semibold select-all">{credentialModal.password}</span>
               </div>
-              <div className="flex justify-between border-b border-slate-800 pb-1.5">
+              <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-400">Hak Akses:</span>
-                <span className="text-white uppercase">{credentialModal.role}</span>
+                <span className="text-white uppercase font-bold">{credentialModal.role}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Halaman Login:</span>

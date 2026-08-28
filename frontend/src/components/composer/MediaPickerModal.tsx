@@ -122,10 +122,10 @@ export default function MediaPickerModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white border border-slate-200 rounded-lg max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden shadow-lg animate-in fade-in zoom-in-95">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+      <div className="bg-white border border-slate-200 rounded-2xl max-w-4xl w-full flex flex-col max-h-[90vh] overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 my-auto">
         {/* Header */}
-        <div className="p-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
           <div className="flex items-center gap-2">
             <FolderOpen className="w-4 h-4 text-slate-700" />
             <h3 className="text-xs font-semibold text-slate-900 uppercase tracking-wide">

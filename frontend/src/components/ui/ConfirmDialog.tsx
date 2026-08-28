@@ -79,9 +79,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
 
       {isOpen && options && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-[999] flex items-center justify-center p-4 animate-in fade-in duration-150">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-[999] flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div
-            className="bg-white border border-slate-200 rounded-lg max-w-md w-full p-5 space-y-4 shadow-xl animate-in zoom-in-95 duration-150"
+            className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150"
             role="dialog"
             aria-modal="true"
           >

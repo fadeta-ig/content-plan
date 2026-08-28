@@ -862,10 +862,10 @@ export default function CalendarPage() {
       {/* MODAL 1: UNIFIED SCHEDULE MODAL (Tabs: Social Post & Shooting Session)   */}
       {/* ========================================================================= */}
       {isScheduleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto">
             {/* Modal Header */}
-            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded bg-slate-900 text-white flex items-center justify-center">
                   <Plus className="w-3.5 h-3.5" />
@@ -1187,10 +1187,10 @@ export default function CalendarPage() {
       {/* MODAL 2: EVENT DETAIL INSPECTOR (Post & Shooting Session)                 */}
       {/* ========================================================================= */}
       {selectedEvent && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto">
             {/* Header */}
-            <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded bg-slate-900 text-white flex items-center justify-center">
                   {selectedEvent.type === 'shooting' ? (

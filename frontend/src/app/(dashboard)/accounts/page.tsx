@@ -291,13 +291,13 @@ export default function AccountsPage() {
 
       {/* Interactive Connection Modal Dialog */}
       {selectedPlatformToConnect && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-lg max-w-md w-full p-5 space-y-4 shadow-xl animate-in fade-in zoom-in-95">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-              <div className="flex items-center gap-2">
-                <SocialIcon platform={selectedPlatformToConnect.id} size={16} />
-                <h3 className="text-xs font-semibold text-slate-900 uppercase tracking-wide">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <SocialIcon platform={selectedPlatformToConnect.id} size={18} />
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
                   Hubungkan {selectedPlatformToConnect.name}
                 </h3>
               </div>
