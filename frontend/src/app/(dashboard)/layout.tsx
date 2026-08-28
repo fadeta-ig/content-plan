@@ -60,7 +60,6 @@ export default function DashboardLayout({
         activeWorkspace={activeWorkspace}
         workspaces={workspaces}
         isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
       />
       <div className="flex-1 flex flex-col min-w-0">
         <Header
