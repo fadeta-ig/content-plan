@@ -20,9 +20,9 @@ module.exports = {
     {
       name: 'creative-worker',
       cwd: './backend',
-      script: 'manage.py',
-      args: 'process_tasks --duration 0 --sleep 15',
-      interpreter: './venv/bin/python',
+      script: './venv/bin/python',
+      args: 'manage.py process_tasks --duration 0 --sleep 15',
+      interpreter: 'none',
       env: {
         DJANGO_SETTINGS_MODULE: 'config.settings.production',
         PYTHONUNBUFFERED: '1',
