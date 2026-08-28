@@ -28,7 +28,7 @@ export default function InboxPage() {
 
   const loadInbox = async () => {
     try {
-      const data = await api.getInbox();
+      const data = await api.getInboxMessages();
       if (data.messages && data.messages.length > 0) {
         setMessages(data.messages);
         setSelectedMessage(data.messages[0]);
@@ -52,7 +52,7 @@ export default function InboxPage() {
 
     setSending(true);
     try {
-      await api.replyInbox({
+      await api.replyInboxMessage({
         message_id: selectedMessage.id,
         content: replyContent,
       });

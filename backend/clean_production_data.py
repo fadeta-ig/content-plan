@@ -40,7 +40,8 @@ user, created = User.objects.get_or_create(email=admin_email, defaults={
 user.name = "Admin PT Wijaya Inovasi Gemilang"
 user.is_staff = True
 user.is_superuser = True
-user.set_password("Wijaya2026!")
+admin_password = os.environ.get("ADMIN_DEFAULT_PASSWORD", "Wijaya2026!")
+user.set_password(admin_password)
 user.save()
 
 # 4. Ensure official Organization & Workspace exist

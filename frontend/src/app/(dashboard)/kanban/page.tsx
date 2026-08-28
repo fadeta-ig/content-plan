@@ -2,11 +2,10 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  Kanban as KanbanIcon,
   Plus,
   GripVertical,
-  Layers,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { KanbanColumn, KanbanCard } from '@/lib/types';
@@ -43,6 +42,7 @@ export default function KanbanPage() {
     { id: 'done', title: 'Siap Dijadwalkan', cards: [] },
   ]);
 
+  const [isLoading, setIsLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedPreview, setSelectedPreview] = useState<{
     card: KanbanCard;
@@ -54,12 +54,14 @@ export default function KanbanPage() {
 
   const loadKanban = async () => {
     try {
-      const data = await api.getKanban();
+      const data = await api.getKanbanIdeas();
       if (data.columns && data.columns.length > 0) {
         setColumns(data.columns);
       }
     } catch {
       // Keep default columns
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -277,8 +279,34 @@ export default function KanbanPage() {
         </div>
       </div>
 
-      {/* Kanban Board Columns Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Kanban Board Columns Grid / Skeleton Loader */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 animate-pulse">
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="flex flex-col rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-3 min-h-[480px]"
+            >
+              <div className="flex items-center justify-between">
+                <div className="h-4 bg-slate-200 rounded w-24" />
+                <div className="w-5 h-5 bg-slate-200 rounded-full" />
+              </div>
+              <div className="space-y-2 flex-1 pt-2">
+                <div className="h-20 bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+                  <div className="h-3 bg-slate-200 rounded w-3/4" />
+                  <div className="h-2.5 bg-slate-100 rounded w-full" />
+                  <div className="h-2.5 bg-slate-100 rounded w-1/2" />
+                </div>
+                <div className="h-20 bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+                  <div className="h-3 bg-slate-200 rounded w-2/3" />
+                  <div className="h-2.5 bg-slate-100 rounded w-full" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {columns.map((col) => {
           const isDragOver = dragOverColumnId === col.id;
           const accentClass = COLUMN_ACCENT[col.id] || 'border-t-slate-300';
@@ -339,6 +367,7 @@ export default function KanbanPage() {
           );
         })}
       </div>
+      )}
 
       {/* Create New Idea Modal (with real-time live preview) */}
       <CreateIdeaModal

@@ -56,7 +56,7 @@ export default function CalendarPage() {
       const endDate = new Date(y, m + 2, 0).toISOString();
       const [calData, kanbanData] = await Promise.all([
         api.getCalendarEvents({ start_date: startDate, end_date: endDate }),
-        api.getKanban().catch(() => ({ columns: [] })),
+        api.getKanbanIdeas().catch(() => ({ columns: [] })),
       ]);
       if (calData.events) {
         setEvents(calData.events);

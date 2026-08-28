@@ -21,7 +21,11 @@ user, created = User.objects.get_or_create(email=email, defaults={
     "is_superuser": True,
     "tos_accepted_at": timezone.now(),
 })
-user.set_password("Wijaya2026!")
+user.name = "Admin PT Wijaya Inovasi Gemilang"
+user.is_staff = True
+user.is_superuser = True
+admin_password = os.environ.get("ADMIN_DEFAULT_PASSWORD", "Wijaya2026!")
+user.set_password(admin_password)
 user.save()
 
 # 2. Create Organization & Workspace

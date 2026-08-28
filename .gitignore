@@ -59,6 +59,8 @@ frontend/.env.local
 Thumbs.db
 .idea/
 .vscode/
+.claude/
+*/.claude/
 *.swp
 *.swo
 *~

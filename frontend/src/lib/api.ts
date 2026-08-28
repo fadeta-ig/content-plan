@@ -120,10 +120,6 @@ export const api = {
     return fetcher<{ columns: KanbanColumn[] }>('/dashboard/kanban');
   },
 
-  async getKanban() {
-    return this.getKanbanIdeas();
-  },
-
   async createIdea(payload: { workspace_id?: string; title: string; content?: string; status?: string }) {
     return fetcher<{ success: boolean; idea: any }>('/dashboard/kanban/create', {
       method: 'POST',
@@ -182,19 +178,11 @@ export const api = {
     return fetcher<{ messages: InboxMessage[] }>(`/dashboard/inbox${query ? `?${query}` : ''}`);
   },
 
-  async getInbox(params?: { status?: string; platform?: string }) {
-    return this.getInboxMessages(params);
-  },
-
   async replyInboxMessage(payload: { message_id: string; content: string }) {
     return fetcher<{ success: boolean; reply_id: string; status: string }>('/dashboard/inbox/reply', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-  },
-
-  async replyInbox(payload: { message_id: string; content: string }) {
-    return this.replyInboxMessage(payload);
   },
 
   // Analytics

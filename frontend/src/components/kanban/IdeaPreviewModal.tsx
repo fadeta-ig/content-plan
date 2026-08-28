@@ -1,23 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   X,
-  Sparkles,
   PenSquare,
   ArrowRight,
   Trash2,
-  Calendar,
-  Layers,
-  CheckCircle2,
-  Clock,
-  Send,
-  Eye,
   Check,
   Copy,
   FileText,
-  BookOpen,
 } from 'lucide-react';
 import { KanbanCard } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
@@ -130,12 +122,28 @@ export default function IdeaPreviewModal({
     });
   };
 
+  // Keyboard accessibility: Close on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   // Word count & read time estimations
   const totalWords = (idea.content || '').trim().split(/\s+/).filter(Boolean).length;
   const estimatedReadMinutes = Math.max(1, Math.ceil(totalWords / 130));
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+    >
       <div className="bg-white border border-slate-200 rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
         <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between gap-3">

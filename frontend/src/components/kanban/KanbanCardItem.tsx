@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Calendar,
   Eye,
-  FileText,
 } from 'lucide-react';
 import { KanbanCard } from '@/lib/types';
 

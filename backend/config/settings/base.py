@@ -148,14 +148,9 @@ CSRF_TRUSTED_ORIGINS = env.list(
     ],
 )
 
-# Cross-Origin Session & Cookie Policies
-SESSION_COOKIE_SAMESITE = "Lax"
+# Cross-Origin CSRF Cookie Policies
 CSRF_COOKIE_SAMESITE = "Lax"
-SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False
-SESSION_COOKIE_AGE = 60 * 60 * 24 * 30  # 30 days
-
-
 
 ROOT_URLCONF = "config.urls"
 
@@ -314,7 +309,7 @@ SOCIALACCOUNT_ADAPTER = "apps.accounts.adapters.SocialAccountAdapter"
 
 # Sessions
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
-SESSION_COOKIE_AGE = 14 * 24 * 60 * 60  # 14 days
+SESSION_COOKIE_AGE = env.int("SESSION_COOKIE_AGE", default=30 * 24 * 60 * 60)  # 30 days
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_SAVE_EVERY_REQUEST = True  # Sliding window

@@ -11,8 +11,7 @@ from ninja.errors import HttpError
 from ninja.security import SessionAuth
 
 from apps.accounts.models import User
-from apps.members.models import OrgMembership, WorkspaceMembership
-from apps.organizations.models import Organization
+from apps.members.models import WorkspaceMembership
 from apps.workspaces.models import Workspace
 
 
@@ -37,6 +36,8 @@ def get_current_user_and_workspace(request: HttpRequest) -> tuple[User, Workspac
         raise HttpError(401, "Sesi autentikasi telah berakhir. Silakan login kembali.")
 
     user = request.user
+    if not isinstance(user, User):
+        raise HttpError(401, "Sesi pengguna tidak valid.")
     workspace = None
     workspace_id_header = request.headers.get("X-Workspace-ID") or request.GET.get("workspace_id")
     if workspace_id_header:
@@ -54,29 +55,9 @@ def get_current_user_and_workspace(request: HttpRequest) -> tuple[User, Workspac
             workspace = membership.workspace
 
     if not workspace:
-        org_membership = OrgMembership.objects.filter(user=user).select_related("organization").first()
-        if org_membership:
-            workspace = Workspace.objects.filter(organization=org_membership.organization).first()
-
-    if not workspace:
-        org, _ = Organization.objects.get_or_create(
-            name="PT Wijaya Inovasi Gemilang",
-            defaults={"default_timezone": "Asia/Jakarta"},
-        )
-        OrgMembership.objects.get_or_create(
-            organization=org,
-            user=user,
-            defaults={"org_role": OrgMembership.OrgRole.OWNER},
-        )
-        workspace, _ = Workspace.objects.get_or_create(
-            organization=org,
-            name="Content Plan Studio",
-            defaults={"timezone": "Asia/Jakarta"},
-        )
-        WorkspaceMembership.objects.get_or_create(
-            workspace=workspace,
-            user=user,
-            defaults={"workspace_role": WorkspaceMembership.WorkspaceRole.OWNER},
+        raise HttpError(
+            403,
+            "Workspace aktif tidak ditemukan. Pastikan akun Anda telah terdaftar dalam workspace yang valid.",
         )
 
     return user, workspace

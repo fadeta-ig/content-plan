@@ -35,16 +35,12 @@ class RegisterRequest(Schema):
 
 @router.post("/login", summary="User Login", auth=None)
 def auth_login(request: HttpRequest, payload: LoginRequest):
-    user = authenticate(request, email=payload.email.strip().lower(), password=payload.password)
-    if not user:
-        try:
-            u = User.objects.get(email=payload.email.strip().lower())
-            if u.check_password(payload.password):
-                user = u
-        except User.DoesNotExist:
-            pass
+    clean_email = payload.email.strip().lower()
+    user = authenticate(request, username=clean_email, password=payload.password) or authenticate(
+        request, email=clean_email, password=payload.password
+    )
 
-    if not user:
+    if not user or not isinstance(user, User):
         raise HttpError(401, "Email atau kata sandi tidak sesuai.")
 
     if not user.is_active:

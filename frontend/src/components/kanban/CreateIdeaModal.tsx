@@ -1,11 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Plus,
-  FileText,
-  Sparkles,
 } from 'lucide-react';
 import { KanbanCard } from '@/lib/types';
 import { api } from '@/lib/api';
@@ -27,6 +25,18 @@ export default function CreateIdeaModal({
   const [content, setContent] = useState('');
   const [status, setStatus] = useState('unassigned');
   const [creating, setCreating] = useState(false);
+
+  // Keyboard accessibility: Close on Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -66,7 +76,12 @@ export default function CreateIdeaModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+    >
       <div className="bg-white border border-slate-200 rounded-xl max-w-lg w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
