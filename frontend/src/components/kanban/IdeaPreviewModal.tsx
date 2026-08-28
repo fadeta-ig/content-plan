@@ -10,6 +10,7 @@ import {
   Check,
   Copy,
   FileText,
+  Clapperboard,
 } from 'lucide-react';
 import { KanbanCard } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
@@ -107,6 +108,15 @@ export default function IdeaPreviewModal({
       content: idea.content || '',
     });
     router.push(`/composer?${queryParams.toString()}`);
+  };
+
+  const handleGoToShooting = () => {
+    onClose();
+    const queryParams = new URLSearchParams({
+      idea_id: idea.id,
+      action: 'shoot',
+    });
+    router.push(`/calendar?${queryParams.toString()}`);
   };
 
   const handleDelete = () => {
@@ -339,6 +349,16 @@ export default function IdeaPreviewModal({
               className="ui-btn ui-btn-secondary text-xs py-1.5"
             >
               Tutup
+            </button>
+
+            <button
+              type="button"
+              onClick={handleGoToShooting}
+              className="ui-btn ui-btn-secondary text-xs py-1.5 flex items-center gap-1.5"
+              title="Jadwalkan rencana sesi shooting berdasarkan ide ini"
+            >
+              <Clapperboard className="w-3.5 h-3.5 text-slate-700" />
+              <span>Jadwalkan Shooting</span>
             </button>
 
             <button

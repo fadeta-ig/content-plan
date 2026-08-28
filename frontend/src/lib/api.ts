@@ -325,6 +325,7 @@ export const api = {
     status?: string;
     crew_members?: { name: string; role: string }[];
     equipment_checklist?: { item: string; checked: boolean }[];
+    related_idea_id?: string | null;
   }) {
     return fetcher<{ success: boolean; message: string; session: any }>('/dashboard/shooting-sessions', {
       method: 'POST',
@@ -341,6 +342,7 @@ export const api = {
     status?: string;
     crew_members?: { name: string; role: string }[];
     equipment_checklist?: { item: string; checked: boolean }[];
+    related_idea_id?: string | null;
   }) {
     return fetcher<{ success: boolean; message: string; session: any }>(`/dashboard/shooting-sessions/${sessionId}`, {
       method: 'PATCH',

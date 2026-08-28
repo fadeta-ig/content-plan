@@ -235,6 +235,14 @@ class ShootingSession(models.Model):
     status = models.CharField(max_length=30, choices=Status.choices, default=Status.PLANNED, db_index=True)
     crew_members = models.JSONField(default=list, blank=True)
     equipment_checklist = models.JSONField(default=list, blank=True)
+    related_idea = models.ForeignKey(
+        "composer.Idea",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shooting_sessions",
+        help_text="Ide dari papan Kanban yang menjadi dasar sesi shooting ini.",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

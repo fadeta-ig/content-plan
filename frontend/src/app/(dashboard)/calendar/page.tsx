@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -65,6 +66,7 @@ function formatDateTimeLocal(d: Date): string {
 export default function CalendarPage() {
   const toast = useToast();
   const { confirm } = useConfirm();
+  const searchParams = useSearchParams();
 
   // Core state
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -80,6 +82,10 @@ export default function CalendarPage() {
   // Unified Schedule Modal state
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [activeScheduleTab, setActiveScheduleTab] = useState<'post' | 'shooting'>('post');
+
+  // Kanban Ideas for shooting pre-fill
+  const [kanbanIdeas, setKanbanIdeas] = useState<{ id: string; title: string; content?: string }[]>([]);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string>('');
 
   // Post Schedule Form state
   const [postCaption, setPostCaption] = useState('');
@@ -133,9 +139,30 @@ export default function CalendarPage() {
       const startDate = new Date(year, month - 1, 1).toISOString();
       const endDate = new Date(year, month + 2, 0).toISOString();
       
-      const calData = await api.getCalendarEvents({ start_date: startDate, end_date: endDate });
+      const [calData, kanbanData] = await Promise.all([
+        api.getCalendarEvents({ start_date: startDate, end_date: endDate }),
+        api.getKanbanIdeas().catch(() => ({ columns: [] })),
+      ]);
+
       if (calData && calData.events) {
         setEvents(calData.events);
+      }
+      if (kanbanData && kanbanData.columns) {
+        const allCards = kanbanData.columns.flatMap((col: any) => col.cards || []);
+        setKanbanIdeas(allCards);
+
+        // Check if query params has idea_id
+        const paramIdeaId = searchParams.get('idea_id');
+        if (paramIdeaId) {
+          const found = allCards.find((c: any) => c.id === paramIdeaId);
+          if (found) {
+            setSelectedIdeaId(found.id);
+            setShootTitle(found.title);
+            if (found.content) setShootDescription(found.content);
+            setActiveScheduleTab('shooting');
+            setIsScheduleModalOpen(true);
+          }
+        }
       }
     } catch (err: any) {
       toast.error('Gagal Memuat Kalender', err.message || 'Tidak dapat terhubung ke server.');
@@ -359,6 +386,7 @@ export default function CalendarPage() {
         status: shootStatus,
         crew_members: cleanCrew,
         equipment_checklist: cleanEquipment,
+        related_idea_id: selectedIdeaId || null,
       });
 
       const newSession = res.session;
@@ -373,15 +401,18 @@ export default function CalendarPage() {
         status: shootStatus,
         crew_members: cleanCrew,
         equipment_checklist: cleanEquipment,
+        related_idea_id: newSession?.related_idea_id || selectedIdeaId || null,
+        related_idea_title: newSession?.related_idea_title || (kanbanIdeas.find(i => i.id === selectedIdeaId)?.title) || null,
         platforms: ['shooting'],
       };
 
       setEvents((prev) => [...prev, newEv]);
-      toast.success('Sesi Shooting Dibuat', `Rencana shooting "${shootTitle}" berhasil disimpan ke kalender.`);
+      toast.success('Sesi Shooting Dibuat', `Rencana shooting "${shootTitle}" berhasil disimpan.`);
       setIsScheduleModalOpen(false);
       setShootTitle('');
       setShootDescription('');
       setShootLocation('');
+      setSelectedIdeaId('');
     } catch (err: any) {
       toast.error('Gagal Menyimpan Shooting', err.message || 'Gagal menyimpan sesi shooting.');
     }
@@ -792,6 +823,14 @@ export default function CalendarPage() {
                         )}
                       </div>
 
+                      {/* Idea Reference Badge if linked */}
+                      {ev.related_idea_title && (
+                        <div className="text-[10px] text-slate-500 flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate">
+                          <Tag className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                          <span className="truncate">Ide: {ev.related_idea_title}</span>
+                        </div>
+                      )}
+
                       {/* Brief description snippet */}
                       {(ev.caption || ev.description) && (
                         <p className="text-[10.5px] text-slate-600 line-clamp-2 bg-slate-50 p-1.5 rounded border border-slate-100">
@@ -946,6 +985,43 @@ export default function CalendarPage() {
               ) : (
                 /* TAB 2: SHOOTING SESSION FORM */
                 <form onSubmit={handleShootingSubmit} className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                  {/* Kanban Idea Selector */}
+                  {kanbanIdeas.length > 0 && (
+                    <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                      <label className="block text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-slate-700" />
+                        <span>Ambil dari Ide Kanban (Opsional)</span>
+                      </label>
+                      <select
+                        value={selectedIdeaId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setSelectedIdeaId(id);
+                          if (id) {
+                            const found = kanbanIdeas.find((i) => i.id === id);
+                            if (found) {
+                              setShootTitle(found.title);
+                              if (found.content) setShootDescription(found.content);
+                            }
+                          }
+                        }}
+                        className="w-full text-xs p-1.5 rounded border border-slate-200 bg-white focus:outline-none"
+                      >
+                        <option value="">-- Buat Manual / Tanpa Tautan Ide --</option>
+                        {kanbanIdeas.map((idea) => (
+                          <option key={idea.id} value={idea.id}>
+                            {idea.title}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedIdeaId && (
+                        <p className="text-[10px] text-slate-500 italic">
+                          Judul dan naskah/brief telah otomatis diselaraskan dari kartu Kanban.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Judul Sesi Shooting <span className="text-rose-500">*</span>
@@ -1023,10 +1099,10 @@ export default function CalendarPage() {
                       Brief & Catatan Produksi
                     </label>
                     <textarea
-                      rows={2}
+                      rows={3}
                       value={shootDescription}
                       onChange={(e) => setShootDescription(e.target.value)}
-                      placeholder="Konsep visual, skrip singkat, atau catatan..."
+                      placeholder="Konsep visual, skrip singkat, alur video, atau catatan penting untuk tim..."
                       className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
                     />
                   </div>
@@ -1148,6 +1224,12 @@ export default function CalendarPage() {
             <div className="p-4 space-y-3 max-h-[65vh] overflow-y-auto text-xs">
               <div>
                 <h4 className="text-xs font-bold text-slate-900">{selectedEvent.title}</h4>
+                {selectedEvent.related_idea_title && (
+                  <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-600 bg-slate-100 px-2 py-1 rounded border border-slate-200">
+                    <Tag className="w-3 h-3 text-slate-500 shrink-0" />
+                    <span>Ide Kanban: <strong>{selectedEvent.related_idea_title}</strong></span>
+                  </div>
+                )}
                 {(selectedEvent.caption || selectedEvent.description) && (
                   <p className="text-[11px] text-slate-600 mt-1 whitespace-pre-wrap bg-slate-50 p-2.5 rounded border border-slate-200">
                     {selectedEvent.caption || selectedEvent.description}

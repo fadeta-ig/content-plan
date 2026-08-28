@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   { label: 'Ide Kanban', href: '/kanban', icon: KanbanIcon },
   { label: 'Kotak Masuk', href: '/inbox', icon: InboxIcon },
   { label: 'Analitik', href: '/analytics', icon: BarChart3 },
-  { label: 'Media Library', href: '/media', icon: FolderOpen },
+  { label: 'Media Library', href: '/media-library', icon: FolderOpen },
   { label: 'Saluran Akun', href: '/accounts', icon: Share2 },
   { label: 'Pengaturan', href: '/settings', icon: SettingsIcon },
 ];

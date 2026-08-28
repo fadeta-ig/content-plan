@@ -11,7 +11,7 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from apps.calendar.models import PostingSlot, ShootingSession
-from apps.composer.models import Post
+from apps.composer.models import Post, Idea
 from .helpers import frontend_auth, get_current_user_and_workspace
 
 
@@ -27,6 +27,7 @@ class ShootingSessionCreateSchema(Schema):
     status: Optional[str] = "planned"
     crew_members: Optional[List[Dict[str, Any]]] = []
     equipment_checklist: Optional[List[Dict[str, Any]]] = []
+    related_idea_id: Optional[str] = None
 
 
 class ShootingSessionUpdateSchema(Schema):
@@ -38,6 +39,7 @@ class ShootingSessionUpdateSchema(Schema):
     status: Optional[str] = None
     crew_members: Optional[List[Dict[str, Any]]] = None
     equipment_checklist: Optional[List[Dict[str, Any]]] = None
+    related_idea_id: Optional[str] = None
 
 
 class RescheduleSchema(Schema):
@@ -105,7 +107,7 @@ def get_calendar_posts(request: HttpRequest, start_date: Optional[str] = None, e
         })
 
     # 2. Fetch Shooting Sessions
-    shoots_qs = ShootingSession.objects.filter(workspace=workspace)
+    shoots_qs = ShootingSession.objects.filter(workspace=workspace).select_related("related_idea")
     if start_date:
         try:
             st = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
@@ -131,6 +133,8 @@ def get_calendar_posts(request: HttpRequest, start_date: Optional[str] = None, e
             "status": s.status,
             "crew_members": s.crew_members or [],
             "equipment_checklist": s.equipment_checklist or [],
+            "related_idea_id": str(s.related_idea_id) if s.related_idea_id else None,
+            "related_idea_title": s.related_idea.title if s.related_idea else None,
             "platforms": ["shooting"],
             "thumbnail_url": "",
             "media": [],
@@ -163,7 +167,7 @@ def list_shooting_sessions(
     end_date: Optional[str] = None,
 ):
     user, workspace = get_current_user_and_workspace(request)
-    qs = ShootingSession.objects.filter(workspace=workspace)
+    qs = ShootingSession.objects.filter(workspace=workspace).select_related("related_idea")
 
     if status and status != "all":
         qs = qs.filter(status=status)
@@ -191,6 +195,8 @@ def list_shooting_sessions(
             "status": s.status,
             "crew_members": s.crew_members or [],
             "equipment_checklist": s.equipment_checklist or [],
+            "related_idea_id": str(s.related_idea_id) if s.related_idea_id else None,
+            "related_idea_title": s.related_idea.title if s.related_idea else None,
             "created_at": s.created_at.isoformat(),
         }
         for s in qs.order_by("scheduled_at")
@@ -217,6 +223,14 @@ def create_shooting_session(request: HttpRequest, payload: ShootingSessionCreate
         except Exception:
             pass
 
+    related_idea = None
+    if payload.related_idea_id:
+        try:
+            i_uuid = uuid.UUID(str(payload.related_idea_id))
+            related_idea = Idea.objects.filter(id=i_uuid, workspace=workspace).first()
+        except Exception:
+            pass
+
     session = ShootingSession.objects.create(
         workspace=workspace,
         title=payload.title.strip(),
@@ -227,6 +241,7 @@ def create_shooting_session(request: HttpRequest, payload: ShootingSessionCreate
         status=payload.status or ShootingSession.Status.PLANNED,
         crew_members=payload.crew_members or [],
         equipment_checklist=payload.equipment_checklist or [],
+        related_idea=related_idea,
         created_by=user,
     )
 
@@ -243,6 +258,8 @@ def create_shooting_session(request: HttpRequest, payload: ShootingSessionCreate
             "status": session.status,
             "crew_members": session.crew_members,
             "equipment_checklist": session.equipment_checklist,
+            "related_idea_id": str(session.related_idea_id) if session.related_idea_id else None,
+            "related_idea_title": session.related_idea.title if session.related_idea else None,
         },
     }
 
@@ -255,7 +272,7 @@ def get_shooting_session_detail(request: HttpRequest, session_id: str):
     except (ValueError, TypeError):
         raise HttpError(400, "ID sesi shooting tidak valid.")
 
-    session = ShootingSession.objects.filter(id=s_uuid, workspace=workspace).first()
+    session = ShootingSession.objects.filter(id=s_uuid, workspace=workspace).select_related("related_idea").first()
     if not session:
         raise HttpError(404, "Sesi shooting tidak ditemukan.")
 
@@ -270,6 +287,8 @@ def get_shooting_session_detail(request: HttpRequest, session_id: str):
             "status": session.status,
             "crew_members": session.crew_members or [],
             "equipment_checklist": session.equipment_checklist or [],
+            "related_idea_id": str(session.related_idea_id) if session.related_idea_id else None,
+            "related_idea_title": session.related_idea.title if session.related_idea else None,
             "created_at": session.created_at.isoformat(),
         }
     }
@@ -283,7 +302,7 @@ def update_shooting_session(request: HttpRequest, session_id: str, payload: Shoo
     except (ValueError, TypeError):
         raise HttpError(400, "ID sesi shooting tidak valid.")
 
-    session = ShootingSession.objects.filter(id=s_uuid, workspace=workspace).first()
+    session = ShootingSession.objects.filter(id=s_uuid, workspace=workspace).select_related("related_idea").first()
     if not session:
         raise HttpError(404, "Sesi shooting tidak ditemukan.")
 
@@ -309,6 +328,15 @@ def update_shooting_session(request: HttpRequest, session_id: str, payload: Shoo
         session.crew_members = payload.crew_members
     if payload.equipment_checklist is not None:
         session.equipment_checklist = payload.equipment_checklist
+    if payload.related_idea_id is not None:
+        if payload.related_idea_id:
+            try:
+                i_uuid = uuid.UUID(str(payload.related_idea_id))
+                session.related_idea = Idea.objects.filter(id=i_uuid, workspace=workspace).first()
+            except Exception:
+                session.related_idea = None
+        else:
+            session.related_idea = None
 
     session.save()
 
@@ -325,6 +353,8 @@ def update_shooting_session(request: HttpRequest, session_id: str, payload: Shoo
             "status": session.status,
             "crew_members": session.crew_members,
             "equipment_checklist": session.equipment_checklist,
+            "related_idea_id": str(session.related_idea_id) if session.related_idea_id else None,
+            "related_idea_title": session.related_idea.title if session.related_idea else None,
         },
     }
 

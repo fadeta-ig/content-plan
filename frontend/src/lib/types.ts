@@ -116,6 +116,8 @@ export interface ShootingSession {
   status: 'planned' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
   crew_members: ShootingCrewMember[];
   equipment_checklist: ShootingEquipmentItem[];
+  related_idea_id?: string | null;
+  related_idea_title?: string | null;
   created_at?: string;
 }
 
@@ -135,6 +137,8 @@ export interface CalendarEvent {
   media?: MediaItem[];
   crew_members?: ShootingCrewMember[];
   equipment_checklist?: ShootingEquipmentItem[];
+  related_idea_id?: string | null;
+  related_idea_title?: string | null;
 }
 
 export interface PostingSlot {
