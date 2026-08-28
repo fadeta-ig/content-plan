@@ -78,10 +78,18 @@ def upload_media_asset(
     }
 
 
+import uuid
+
+
 @router.delete("/dashboard/media/{asset_id}", summary="Delete Media Asset")
 def delete_media_asset(request: HttpRequest, asset_id: str):
     user, workspace = get_current_user_and_workspace(request)
-    asset = MediaAsset.objects.filter(id=asset_id, workspace=workspace).first()
+    try:
+        a_uuid = uuid.UUID(str(asset_id))
+    except (ValueError, TypeError):
+        raise HttpError(400, "ID berkas media tidak valid.")
+
+    asset = MediaAsset.objects.filter(id=a_uuid, workspace=workspace).first()
     if not asset:
         raise HttpError(404, "Berkas media tidak ditemukan.")
     if asset.file:
