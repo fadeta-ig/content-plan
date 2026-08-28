@@ -9,6 +9,7 @@ import {
   Plus,
   LogOut,
   User as UserIcon,
+  Menu,
 } from 'lucide-react';
 import { User, Workspace } from '@/lib/types';
 import { api } from '@/lib/api';
@@ -20,9 +21,17 @@ interface HeaderProps {
   user?: User | null;
   activeWorkspace?: Workspace | null;
   isBackendConnected?: boolean;
+  onToggleSidebar?: () => void;
+  isSidebarOpen?: boolean;
 }
 
-export default function Header({ user, activeWorkspace, isBackendConnected = true }: HeaderProps) {
+export default function Header({
+  user,
+  activeWorkspace,
+  isBackendConnected = true,
+  onToggleSidebar,
+  isSidebarOpen,
+}: HeaderProps) {
   const router = useRouter();
   const toast = useToast();
   const { confirm } = useConfirm();
@@ -46,16 +55,27 @@ export default function Header({ user, activeWorkspace, isBackendConnected = tru
   };
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 select-none">
-      {/* Search Bar */}
-      <div className="flex items-center gap-3 w-72">
-        <div className="relative w-full">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Cari post, akun, ide..."
-            className="w-full bg-slate-50 border border-slate-200 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-slate-400 transition"
-          />
+    <header className="h-14 bg-white border-b border-slate-200 px-3 md:px-6 flex items-center justify-between sticky top-0 z-30 select-none">
+      {/* Left side: Hamburger Toggle & Search Bar */}
+      <div className="flex items-center gap-2 md:gap-3">
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          className="p-1.5 rounded-md hover:bg-slate-100 text-slate-600 focus:outline-none transition"
+          title={isSidebarOpen ? 'Sembunyikan Sidebar' : 'Tampilkan Sidebar'}
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
+        <div className="hidden sm:flex items-center gap-3 w-48 md:w-72">
+          <div className="relative w-full">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Cari post, akun, ide..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-slate-400 transition"
+            />
+          </div>
         </div>
       </div>
 

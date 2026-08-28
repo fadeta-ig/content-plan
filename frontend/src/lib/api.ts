@@ -305,4 +305,62 @@ export const api = {
       }
     );
   },
+
+  // Shooting Sessions (Production Planner)
+  async getShootingSessions(params?: { status?: string; start_date?: string; end_date?: string }) {
+    const query = new URLSearchParams(params as any).toString();
+    return fetcher<{ sessions: any[] }>(`/dashboard/shooting-sessions${query ? `?${query}` : ''}`);
+  },
+
+  async getShootingSessionDetail(sessionId: string) {
+    return fetcher<{ session: any }>(`/dashboard/shooting-sessions/${sessionId}`);
+  },
+
+  async createShootingSession(payload: {
+    title: string;
+    description?: string;
+    location?: string;
+    scheduled_at: string;
+    end_at?: string;
+    status?: string;
+    crew_members?: { name: string; role: string }[];
+    equipment_checklist?: { item: string; checked: boolean }[];
+  }) {
+    return fetcher<{ success: boolean; message: string; session: any }>('/dashboard/shooting-sessions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateShootingSession(sessionId: string, payload: {
+    title?: string;
+    description?: string;
+    location?: string;
+    scheduled_at?: string;
+    end_at?: string;
+    status?: string;
+    crew_members?: { name: string; role: string }[];
+    equipment_checklist?: { item: string; checked: boolean }[];
+  }) {
+    return fetcher<{ success: boolean; message: string; session: any }>(`/dashboard/shooting-sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async rescheduleShootingSession(sessionId: string, newScheduledAt: string) {
+    return fetcher<{ success: boolean; message: string; session_id: string; scheduled_at: string }>(
+      `/dashboard/shooting-sessions/${sessionId}/reschedule`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ scheduled_at: newScheduledAt }),
+      }
+    );
+  },
+
+  async deleteShootingSession(sessionId: string) {
+    return fetcher<{ success: boolean; message: string }>(`/dashboard/shooting-sessions/${sessionId}`, {
+      method: 'DELETE',
+    });
+  },
 };

@@ -18,6 +18,7 @@ export default function DashboardLayout({
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
   const loadUserData = async () => {
     try {
@@ -55,10 +56,21 @@ export default function DashboardLayout({
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc] text-slate-800">
-      <Sidebar activeWorkspace={activeWorkspace} workspaces={workspaces} />
+      <Sidebar
+        activeWorkspace={activeWorkspace}
+        workspaces={workspaces}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+      />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header user={user} activeWorkspace={activeWorkspace} isBackendConnected={true} />
-        <main className="flex-1 p-4 md:p-6 overflow-y-auto w-full max-w-7xl mx-auto space-y-4">
+        <Header
+          user={user}
+          activeWorkspace={activeWorkspace}
+          isBackendConnected={true}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+        />
+        <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto w-full max-w-7xl mx-auto space-y-4">
           {children}
         </main>
       </div>

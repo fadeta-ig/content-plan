@@ -295,7 +295,13 @@ class RescheduleSchema(Schema):
 def reschedule_post(request: HttpRequest, post_id: str, payload: RescheduleSchema):
     """Move a post to a new date/time (Calendar Drag-and-Drop)."""
     user, workspace = get_current_user_and_workspace(request)
-    post = Post.objects.filter(id=post_id, workspace=workspace).first()
+    
+    try:
+        post_uuid = uuid.UUID(str(post_id))
+    except (ValueError, TypeError, AttributeError):
+        raise HttpError(400, "ID postingan tidak valid.")
+
+    post = Post.objects.filter(id=post_uuid, workspace=workspace).first()
     if not post:
         raise HttpError(404, "Postingan tidak ditemukan.")
 
@@ -304,16 +310,17 @@ def reschedule_post(request: HttpRequest, post_id: str, payload: RescheduleSchem
     except Exception:
         raise HttpError(422, "Format tanggal tidak valid.")
 
-    post.scheduled_at = new_dt
-    post.save(update_fields=["scheduled_at"])
+    with transaction.atomic():
+        post.scheduled_at = new_dt
+        post.save(update_fields=["scheduled_at"])
 
-    # Update platform posts scheduled_at too
-    post.platform_posts.filter(
-        status__in=[
-            PlatformPost.Status.SCHEDULED,
-            PlatformPost.Status.DRAFT,
-        ]
-    ).update(scheduled_at=new_dt)
+        # Update platform posts scheduled_at too
+        post.platform_posts.filter(
+            status__in=[
+                PlatformPost.Status.SCHEDULED,
+                PlatformPost.Status.DRAFT,
+            ]
+        ).update(scheduled_at=new_dt)
 
     return {
         "success": True,

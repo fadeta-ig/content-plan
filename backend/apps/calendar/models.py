@@ -209,3 +209,47 @@ class CustomCalendarEvent(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.start_date} – {self.end_date})"
+
+
+class ShootingSession(models.Model):
+    """Production & shooting schedule for content creation."""
+
+    class Status(models.TextChoices):
+        PLANNED = "planned", "Rencana"
+        CONFIRMED = "confirmed", "Terkonfirmasi"
+        IN_PROGRESS = "in_progress", "Sedang Berlangsung"
+        COMPLETED = "completed", "Selesai Shooting"
+        CANCELLED = "cancelled", "Dibatalkan"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey(
+        "workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="shooting_sessions",
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="", help_text="Konsep, brief, skrip, atau catatan produksi.")
+    location = models.CharField(max_length=255, blank=True, default="", help_text="Lokasi shooting (studio/outdoor).")
+    scheduled_at = models.DateTimeField(db_index=True)
+    end_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.PLANNED, db_index=True)
+    crew_members = models.JSONField(default=list, blank=True)
+    equipment_checklist = models.JSONField(default=list, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_shooting_sessions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = WorkspaceScopedManager()
+
+    class Meta:
+        db_table = "calendar_shooting_session"
+        ordering = ["scheduled_at"]
+
+    def __str__(self):
+        return f"Shoot: {self.title} ({self.scheduled_at.strftime('%Y-%m-%d %H:%M')})"

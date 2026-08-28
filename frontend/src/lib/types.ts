@@ -96,16 +96,45 @@ export interface OverviewMetrics {
   }[];
 }
 
-export interface CalendarEvent {
+export interface ShootingCrewMember {
+  name: string;
+  role: string;
+}
+
+export interface ShootingEquipmentItem {
+  item: string;
+  checked: boolean;
+}
+
+export interface ShootingSession {
   id: string;
   title: string;
+  description: string;
+  location: string;
+  scheduled_at: string;
+  end_at?: string | null;
+  status: 'planned' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  crew_members: ShootingCrewMember[];
+  equipment_checklist: ShootingEquipmentItem[];
+  created_at?: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  type?: 'post' | 'shooting';
+  title: string;
   caption?: string;
+  description?: string;
+  location?: string;
   first_comment?: string;
   start: string;
+  end?: string | null;
   platforms: string[];
   status: string;
   thumbnail_url?: string;
   media?: MediaItem[];
+  crew_members?: ShootingCrewMember[];
+  equipment_checklist?: ShootingEquipmentItem[];
 }
 
 export interface PostingSlot {
