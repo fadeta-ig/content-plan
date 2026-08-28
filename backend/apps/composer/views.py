@@ -5,7 +5,7 @@ import contextlib
 import json
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 import httpx
