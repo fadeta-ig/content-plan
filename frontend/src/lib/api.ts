@@ -14,7 +14,7 @@ import {
   TeamMember,
 } from './types';
 
-const API_BASE = '/api/backend/frontend';
+const API_BASE = '/api/v1/frontend';
 
 async function fetcher<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const defaultHeaders: Record<string, string> = {

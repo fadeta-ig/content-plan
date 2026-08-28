@@ -12,13 +12,18 @@ const nextConfig = {
       {
         protocol: 'http',
         hostname: 'localhost',
-        port: '8000',
+        port: '8050',
         pathname: '/media/**',
       },
       {
         protocol: 'http',
         hostname: '127.0.0.1',
-        port: '8000',
+        port: '8050',
+        pathname: '/media/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'creative.wijayainovasi.co.id',
         pathname: '/media/**',
       },
       {
@@ -34,12 +39,12 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/backend/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/api/v1/:path*`,
+        source: '/api/v1/:path*',
+        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8050'}/api/v1/:path*`,
       },
       {
         source: '/media/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/media/:path*`,
+        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8050'}/media/:path*`,
       },
     ];
   },
