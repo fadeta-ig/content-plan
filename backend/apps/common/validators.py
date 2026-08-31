@@ -5,6 +5,8 @@ import re
 import socket
 from urllib.parse import urlparse
 
+from xml.etree.ElementTree import Element
+
 from defusedxml import ElementTree
 from django.core.exceptions import ValidationError
 
@@ -143,7 +145,7 @@ def is_valid_hex_color(value: str) -> bool:
     return isinstance(value, str) and bool(_HEX_COLOR_RE.match(value))
 
 
-def safe_xml_fromstring(body: bytes, *, max_bytes: int = MAX_XML_BYTES) -> ElementTree.Element | None:
+def safe_xml_fromstring(body: bytes, *, max_bytes: int = MAX_XML_BYTES) -> Element | None:
     """Parse RSS/Atom/Webhook XML safely.
 
     Uses ``defusedxml`` plus an explicit size cap. DTD/entity declarations are
