@@ -272,6 +272,14 @@ class Post(models.Model):
         blank=True,
         related_name="posts",
     )
+    related_idea = models.ForeignKey(
+        "Idea",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="generated_posts",
+        help_text="Ide / Brief naskah acuan asal postingan ini dibuat",
+    )
 
     # Scheduling (default when a PlatformPost doesn't set its own scheduled_at)
     scheduled_at = models.DateTimeField(blank=True, null=True, db_index=True)

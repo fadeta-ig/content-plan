@@ -11,6 +11,7 @@ import {
   Copy,
   FileText,
   Clapperboard,
+  Calendar,
   Paperclip,
 } from 'lucide-react';
 import { KanbanCard, AttachmentItem } from '@/lib/types';
@@ -127,6 +128,15 @@ export default function IdeaPreviewModal({
       content: idea.content || '',
     });
     router.push(`/composer?${queryParams.toString()}`);
+  };
+
+  const handleGoToSchedulePost = () => {
+    onClose();
+    const queryParams = new URLSearchParams({
+      idea_id: idea.id,
+      action: 'post',
+    });
+    router.push(`/calendar?${queryParams.toString()}`);
   };
 
   const handleGoToShooting = () => {
@@ -426,6 +436,16 @@ export default function IdeaPreviewModal({
               className="ui-btn ui-btn-secondary text-xs py-1.5"
             >
               Tutup
+            </button>
+
+            <button
+              type="button"
+              onClick={handleGoToSchedulePost}
+              className="ui-btn ui-btn-secondary text-xs py-1.5 flex items-center gap-1.5"
+              title="Jadwalkan postingan media sosial berdasarkan naskah brief ini di Kalender"
+            >
+              <Calendar className="w-3.5 h-3.5 text-blue-600" />
+              <span>Jadwalkan Post</span>
             </button>
 
             <button

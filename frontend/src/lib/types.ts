@@ -77,6 +77,8 @@ export interface Post {
   first_comment?: string;
   media: MediaItem[];
   targets: PlatformPostTarget[];
+  related_idea_id?: string | null;
+  related_idea_title?: string | null;
 }
 
 export interface OverviewMetrics {

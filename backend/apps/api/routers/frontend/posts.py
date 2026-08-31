@@ -15,7 +15,7 @@ from ninja.errors import HttpError
 
 from apps.accounts.models import User
 from apps.approvals.models import ApprovalAction
-from apps.composer.models import PlatformPost, Post, PostMedia
+from apps.composer.models import Idea, PlatformPost, Post, PostMedia
 from apps.media_library.models import MediaAsset
 from apps.social_accounts.models import SocialAccount
 
@@ -34,6 +34,7 @@ class PostCreateSchema(Schema):
     media_ids: list[str] | None = None
     category_id: str | None = None
     tags: list[str] | None = None
+    related_idea_id: str | None = None
     post_now: bool = False
 
 
@@ -63,8 +64,10 @@ def list_posts(
 ):
     user, workspace = get_current_user_and_workspace(request)
 
-    qs = Post.objects.filter(workspace=workspace).prefetch_related(
-        "platform_posts__social_account", "media_attachments__media_asset", "approval_actions"
+    qs = (
+        Post.objects.filter(workspace=workspace)
+        .select_related("related_idea")
+        .prefetch_related("platform_posts__social_account", "media_attachments__media_asset", "approval_actions")
     )
 
     if status:
@@ -113,6 +116,8 @@ def list_posts(
                 "approval_status": actual_approval_status,
                 "first_comment": p.first_comment,
                 "media": media_list,
+                "related_idea_id": str(p.related_idea_id) if p.related_idea_id else (str(p.source_idea.id) if hasattr(p, "source_idea") and p.source_idea else None),
+                "related_idea_title": p.related_idea.title if p.related_idea else (p.source_idea.title if hasattr(p, "source_idea") and p.source_idea else None),
                 "targets": [
                     {
                         "id": str(pp.id),
@@ -175,6 +180,14 @@ def create_dashboard_post(request: HttpRequest, payload: PostCreateSchema):
     if not target_accounts.exists():
         raise HttpError(422, "Pilih minimal satu akun sosial yang benar-benar terhubung.")
 
+    related_idea = None
+    if payload.related_idea_id:
+        try:
+            idea_uuid = uuid.UUID(str(payload.related_idea_id))
+            related_idea = Idea.objects.filter(id=idea_uuid, workspace=workspace).first()
+        except (ValueError, TypeError):
+            pass
+
     with transaction.atomic():
         if payload.post_id:
             post = Post.objects.filter(id=payload.post_id, workspace=workspace).first()
@@ -185,6 +198,8 @@ def create_dashboard_post(request: HttpRequest, payload: PostCreateSchema):
                 post.caption = caption
                 post.first_comment = payload.first_comment.strip() if payload.first_comment else ""
                 post.scheduled_at = scheduled_dt
+                if related_idea:
+                    post.related_idea = related_idea
                 post.save()
                 post.platform_posts.all().delete()
                 post.media_attachments.all().delete()
@@ -195,6 +210,7 @@ def create_dashboard_post(request: HttpRequest, payload: PostCreateSchema):
                 caption=caption,
                 first_comment=payload.first_comment.strip() if payload.first_comment else "",
                 scheduled_at=scheduled_dt,
+                related_idea=related_idea,
             )
 
         for account in target_accounts:
@@ -239,6 +255,7 @@ def get_post_detail(request: HttpRequest, post_id: uuid.UUID):
     user, workspace = get_current_user_and_workspace(request)
     p = (
         Post.objects.filter(id=post_id, workspace=workspace)
+        .select_related("related_idea")
         .prefetch_related("platform_posts__social_account", "media_attachments__media_asset", "approval_actions")
         .first()
     )
@@ -267,6 +284,8 @@ def get_post_detail(request: HttpRequest, post_id: uuid.UUID):
             "published_at": p.published_at.isoformat() if p.published_at else None,
             "created_at": p.created_at.isoformat(),
             "first_comment": p.first_comment,
+            "related_idea_id": str(p.related_idea_id) if p.related_idea_id else (str(p.source_idea.id) if hasattr(p, "source_idea") and p.source_idea else None),
+            "related_idea_title": p.related_idea.title if p.related_idea else (p.source_idea.title if hasattr(p, "source_idea") and p.source_idea else None),
             "media": media_list,
             "targets": [
                 {

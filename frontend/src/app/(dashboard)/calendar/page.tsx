@@ -17,7 +17,6 @@ import {
   Square,
   Sparkles,
   Trash2,
-  Tag,
   Share2,
   RefreshCw,
   Paperclip,
@@ -77,9 +76,10 @@ export default function CalendarPage() {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [activeScheduleTab, setActiveScheduleTab] = useState<'post' | 'shooting'>('post');
 
-  // Kanban Ideas for shooting pre-fill
+  // Kanban Ideas for shooting & post pre-fill
   const [kanbanIdeas, setKanbanIdeas] = useState<{ id: string; title: string; content?: string }[]>([]);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string>('');
+  const [postSelectedIdeaId, setPostSelectedIdeaId] = useState<string>('');
 
   // Post Schedule Form state
   const [postCaption, setPostCaption] = useState('');
@@ -202,15 +202,25 @@ export default function CalendarPage() {
         const allCards = kanbanData.columns.flatMap((column) => column.cards || []);
         setKanbanIdeas(allCards);
 
-        // Check if query params has idea_id
+        // Check if query params has idea_id (from Kanban)
         const paramIdeaId = searchParams.get('idea_id');
+        const paramAction = searchParams.get('action');
         if (paramIdeaId) {
           const found = allCards.find((card) => card.id === paramIdeaId);
           if (found) {
-            setSelectedIdeaId(found.id);
-            setShootTitle(found.title);
-            if (found.content) setShootDescription(found.content);
-            setActiveScheduleTab('shooting');
+            if (paramAction === 'shoot') {
+              setSelectedIdeaId(found.id);
+              setShootTitle(found.title);
+              if (found.content) setShootDescription(found.content);
+              setActiveScheduleTab('shooting');
+            } else {
+              setPostSelectedIdeaId(found.id);
+              const initialText = found.content
+                ? `${found.title}\n\n${found.content}`
+                : found.title;
+              setPostCaption(initialText);
+              setActiveScheduleTab('post');
+            }
             setIsScheduleModalOpen(true);
           }
         }
@@ -394,25 +404,32 @@ export default function CalendarPage() {
     }
 
     try {
+      const linkedIdea = kanbanIdeas.find((i) => i.id === postSelectedIdeaId);
+
       const res = await api.createPost({
         master_caption: postCaption,
         target_account_ids: [postPlatform],
         scheduled_at: postDate,
+        related_idea_id: postSelectedIdeaId || undefined,
       });
 
       const newEv: CalendarEvent = {
         id: res.post_id || `post-${Date.now()}`,
         type: 'post',
         title: postCaption,
+        caption: postCaption,
         start: postDate,
         platforms: [postPlatform],
         status: 'scheduled',
+        related_idea_id: postSelectedIdeaId || null,
+        related_idea_title: linkedIdea?.title || null,
       };
 
       setEvents((prev) => [...prev, newEv]);
       toast.success('Jadwal Ditambahkan', 'Postingan media sosial berhasil dijadwalkan.');
       setIsScheduleModalOpen(false);
       setPostCaption('');
+      setPostSelectedIdeaId('');
     } catch (error: unknown) {
       toast.error('Gagal Menjadwalkan', getErrorMessage(error, 'Tidak dapat menyimpan postingan ke server.'));
     }
@@ -924,11 +941,11 @@ export default function CalendarPage() {
                         )}
                       </div>
 
-                      {/* Idea Reference Badge if linked */}
+                      {/* Idea / Brief Reference Badge */}
                       {ev.related_idea_title && (
-                        <div className="text-[10px] text-slate-500 flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate">
-                          <Tag className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                          <span className="truncate">Ide: {ev.related_idea_title}</span>
+                        <div className="text-[10px] text-blue-800 font-semibold flex items-center gap-1 bg-blue-50/90 px-2 py-0.5 rounded border border-blue-200/90 truncate">
+                          <Sparkles className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+                          <span className="truncate">Sumber Brief: {ev.related_idea_title}</span>
                         </div>
                       )}
 
@@ -1036,6 +1053,53 @@ export default function CalendarPage() {
               {activeScheduleTab === 'post' ? (
                 /* TAB 1: SOCIAL POST FORM */
                 <form onSubmit={handlePostSubmit} className="space-y-3">
+                  {/* Kanban Idea / Brief Selector for Social Posts */}
+                  {kanbanIdeas.length > 0 && (
+                    <div className="p-2.5 bg-blue-50/60 rounded-xl border border-blue-200/80 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="schedule-post-kanban-idea" className="text-[11px] font-bold text-blue-950 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Ambil dari Ide / Brief Kanban (Opsional)</span>
+                        </label>
+                        {postSelectedIdeaId && (
+                          <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-semibold border border-blue-200">
+                            Tersinkronisasi
+                          </span>
+                        )}
+                      </div>
+                      <select
+                        id="schedule-post-kanban-idea"
+                        value={postSelectedIdeaId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setPostSelectedIdeaId(id);
+                          if (id) {
+                            const found = kanbanIdeas.find((i) => i.id === id);
+                            if (found) {
+                              const initialText = found.content
+                                ? `${found.title}\n\n${found.content}`
+                                : found.title;
+                              setPostCaption(initialText);
+                            }
+                          }
+                        }}
+                        className="w-full text-xs p-1.5 rounded-lg border border-blue-200 bg-white focus:outline-none focus:border-blue-500 font-sans"
+                      >
+                        <option value="">-- Buat Postingan Baru (Tanpa Referensi Ide) --</option>
+                        {kanbanIdeas.map((idea) => (
+                          <option key={idea.id} value={idea.id}>
+                            💡 {idea.title}
+                          </option>
+                        ))}
+                      </select>
+                      {postSelectedIdeaId && (
+                        <p className="text-[10px] text-blue-800/80 leading-relaxed">
+                          Postingan ini akan otomatis ditandai terhubung dengan brief &ldquo;{kanbanIdeas.find(i => i.id === postSelectedIdeaId)?.title}&rdquo;.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div>
                     <label htmlFor="schedule-post-caption" className="block text-xs font-semibold text-slate-700 mb-1">
                       Konten / Caption Utama
@@ -1375,9 +1439,9 @@ export default function CalendarPage() {
               <div>
                 <h4 className="text-xs font-bold text-slate-900">{selectedEvent.title}</h4>
                 {selectedEvent.related_idea_title && (
-                  <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-600 bg-slate-100 px-2 py-1 rounded border border-slate-200">
-                    <Tag className="w-3 h-3 text-slate-500 shrink-0" />
-                    <span>Ide Kanban: <strong>{selectedEvent.related_idea_title}</strong></span>
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-900 bg-blue-50/90 px-2.5 py-1 rounded-lg border border-blue-200">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>Diambil dari Ide / Brief: <strong>{selectedEvent.related_idea_title}</strong></span>
                   </div>
                 )}
                 {(selectedEvent.caption || selectedEvent.description) && (

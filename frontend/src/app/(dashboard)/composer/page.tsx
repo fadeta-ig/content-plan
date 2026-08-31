@@ -13,9 +13,10 @@ import {
   MessageSquare,
   Smartphone,
   X,
+  Sparkles,
 } from 'lucide-react';
 import { api, getErrorMessage } from '@/lib/api';
-import { MediaItem, SocialAccount } from '@/lib/types';
+import { MediaItem, SocialAccount, KanbanCard } from '@/lib/types';
 import SocialIcon from '@/components/ui/SocialIcon';
 import MediaPickerModal from '@/components/composer/MediaPickerModal';
 import DateTimePicker from '@/components/ui/DateTimePicker';
@@ -38,6 +39,7 @@ function ComposerForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const postIdParam = searchParams.get('post_id');
+  const ideaIdParam = searchParams.get('idea_id');
   const titleParam = searchParams.get('title');
   const contentParam = searchParams.get('content');
 
@@ -56,6 +58,9 @@ function ComposerForm() {
   const [connectedAccounts, setConnectedAccounts] = useState<SocialAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [accountsError, setAccountsError] = useState('');
+  const [kanbanIdeas, setKanbanIdeas] = useState<KanbanCard[]>([]);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(ideaIdParam || null);
+  const [linkedIdea, setLinkedIdea] = useState<{ id: string; title: string; content?: string } | null>(null);
 
   const loadAccounts = useCallback(async () => {
     setAccountsLoading(true);
@@ -110,6 +115,13 @@ function ComposerForm() {
           if (res.post.media && res.post.media.length > 0) {
             setAttachedMedia(res.post.media);
           }
+          if (res.post.related_idea_id) {
+            setSelectedIdeaId(res.post.related_idea_id);
+            setLinkedIdea({
+              id: res.post.related_idea_id,
+              title: res.post.related_idea_title || 'Ide / Brief Terhubung',
+            });
+          }
           if (res.post.targets && res.post.targets.length > 0) {
             const plats = Array.from(new Set(res.post.targets.map((t) => t.platform)));
             setSelectedPlatforms(plats);
@@ -123,6 +135,33 @@ function ComposerForm() {
     }
     loadPostToEdit();
   }, [postIdParam, toast]);
+
+  // Load Kanban ideas for pre-filling & linking
+  useEffect(() => {
+    async function loadIdeas() {
+      try {
+        const res = await api.getKanbanIdeas();
+        const allCards: KanbanCard[] = [];
+        res.columns?.forEach((col) => {
+          if (col.cards) allCards.push(...col.cards);
+        });
+        setKanbanIdeas(allCards);
+        if (ideaIdParam) {
+          const found = allCards.find((c) => c.id === ideaIdParam);
+          if (found) {
+            setLinkedIdea({ id: found.id, title: found.title, content: found.content });
+            setSelectedIdeaId(found.id);
+          } else if (titleParam) {
+            setLinkedIdea({ id: ideaIdParam, title: titleParam, content: contentParam || undefined });
+            setSelectedIdeaId(ideaIdParam);
+          }
+        }
+      } catch {
+        // silent fallback
+      }
+    }
+    void loadIdeas();
+  }, [ideaIdParam, titleParam, contentParam]);
 
   // Prefill title & content from query params if available (e.g. from Kanban)
   useEffect(() => {
@@ -169,6 +208,7 @@ function ComposerForm() {
         scheduled_at: postNow ? undefined : scheduledAt,
         first_comment: showFirstComment ? firstComment : undefined,
         media_ids: attachedMedia.map((m) => m.id),
+        related_idea_id: selectedIdeaId || undefined,
         post_now: postNow,
       });
 
@@ -190,6 +230,8 @@ function ComposerForm() {
         setCaption('');
         setFirstComment('');
         setAttachedMedia([]);
+        setSelectedIdeaId(null);
+        setLinkedIdea(null);
       }
     } catch (error: unknown) {
       toast.error('Gagal Menyimpan', getErrorMessage(error, 'Gagal menyimpan postingan ke database.'));
@@ -340,6 +382,71 @@ function ComposerForm() {
               })}
             </div>
           </div>
+
+          {/* Idea / Brief Linker Box */}
+          {linkedIdea ? (
+            <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-150">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-blue-600/10 text-blue-600 flex items-center justify-center shrink-0 border border-blue-200">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 block">
+                    Sumber Ide / Brief Terhubung
+                  </span>
+                  <p className="text-xs font-bold text-blue-950 truncate">
+                    {linkedIdea.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedIdeaId(null);
+                  setLinkedIdea(null);
+                }}
+                className="text-[11px] text-slate-500 hover:text-rose-600 px-2 py-1 rounded hover:bg-white/80 transition font-medium shrink-0"
+                title="Lepas tautan brief dari postingan ini"
+              >
+                Lepas Tautan
+              </button>
+            </div>
+          ) : (
+            kanbanIdeas.length > 0 && (
+              <div className="p-2.5 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1.5">
+                <label htmlFor="composer-idea-select" className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Ambil Naskah dari Ide / Brief Kanban (Opsional)</span>
+                </label>
+                <select
+                  id="composer-idea-select"
+                  value={selectedIdeaId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (id) {
+                      const found = kanbanIdeas.find((i) => i.id === id);
+                      if (found) {
+                        setSelectedIdeaId(found.id);
+                        setLinkedIdea({ id: found.id, title: found.title, content: found.content });
+                        const initialText = found.content
+                          ? `${found.title}\n\n${found.content}`
+                          : found.title;
+                        setCaption(initialText);
+                      }
+                    }
+                  }}
+                  className="w-full text-xs p-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-blue-500 font-sans"
+                >
+                  <option value="">-- Hubungkan dengan Ide / Brief Kanban --</option>
+                  {kanbanIdeas.map((idea) => (
+                    <option key={idea.id} value={idea.id}>
+                      💡 {idea.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )
+          )}
 
           {/* Master Caption Box */}
           <div className="ui-card space-y-2.5">
@@ -555,6 +662,14 @@ function ComposerForm() {
 
                 <SocialIcon platform={activePreviewTab} size={14} className="text-slate-400" />
               </div>
+
+              {/* Linked Brief Badge in Preview */}
+              {linkedIdea && (
+                <div className="flex items-center gap-1.5 text-[10px] text-blue-800 bg-blue-50/90 px-2 py-1 rounded-md border border-blue-200/80">
+                  <Sparkles className="w-3 h-3 text-blue-600 shrink-0" />
+                  <span className="truncate">Sumber Brief: <strong>{linkedIdea.title}</strong></span>
+                </div>
+              )}
 
               {/* Caption Preview */}
               <p className="text-slate-800 text-xs leading-relaxed whitespace-pre-wrap">

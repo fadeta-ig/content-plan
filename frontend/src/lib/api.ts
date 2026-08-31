@@ -142,6 +142,7 @@ export const api = {
     scheduled_at?: string;
     first_comment?: string;
     media_ids?: string[];
+    related_idea_id?: string;
     post_now?: boolean;
   }) {
     return fetcher<{ success: boolean; message: string; post_id: string; status: string }>(

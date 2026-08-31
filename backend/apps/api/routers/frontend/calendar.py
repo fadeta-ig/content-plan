@@ -84,8 +84,10 @@ def get_calendar_posts(request: HttpRequest, start_date: str | None = None, end_
     if end_dt:
         posts_qs = posts_qs.filter(scheduled_at__lte=end_dt)
 
-    posts = posts_qs.prefetch_related("platform_posts__social_account", "media_attachments__media_asset").order_by(
-        "scheduled_at"
+    posts = (
+        posts_qs.select_related("related_idea")
+        .prefetch_related("platform_posts__social_account", "media_attachments__media_asset")
+        .order_by("scheduled_at")
     )
 
     events: list[dict[str, Any]] = []
@@ -123,6 +125,8 @@ def get_calendar_posts(request: HttpRequest, start_date: str | None = None, end_
                 "status": primary_status,
                 "thumbnail_url": thumbnail,
                 "media": media_list,
+                "related_idea_id": str(p.related_idea_id) if p.related_idea_id else (str(p.source_idea.id) if hasattr(p, "source_idea") and p.source_idea else None),
+                "related_idea_title": p.related_idea.title if p.related_idea else (p.source_idea.title if hasattr(p, "source_idea") and p.source_idea else None),
             }
         )
 
