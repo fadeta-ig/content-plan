@@ -7,7 +7,9 @@ import logging
 import os
 import tempfile
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from urllib.parse import quote, urlencode
 
 import httpx

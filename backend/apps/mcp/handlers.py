@@ -15,7 +15,9 @@ type, and agents can always ``JSON.parse`` it.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from typing import Any
 from uuid import UUID
 

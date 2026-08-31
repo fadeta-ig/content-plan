@@ -7,7 +7,9 @@ import json
 import logging
 import re
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 
 from .base import SocialProvider
 from .exceptions import PublishError
