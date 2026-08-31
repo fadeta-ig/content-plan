@@ -251,6 +251,7 @@ export default function MediaPickerModal({
                       src={item.thumbnail_url || item.file_url}
                       alt={item.title || 'Media pustaka'}
                       fill
+                      unoptimized
                       sizes="(max-width: 640px) 50vw, 25vw"
                       className="w-full h-full object-cover"
                     />

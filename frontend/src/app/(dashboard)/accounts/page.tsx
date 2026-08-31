@@ -43,6 +43,10 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlatformToConnect, setSelectedPlatformToConnect] = useState<PlatformOption | null>(null);
+  const [connectMode, setConnectMode] = useState<'oauth' | 'manual'>('manual');
+  const [accountNameInput, setAccountNameInput] = useState('');
+  const [accountHandleInput, setAccountHandleInput] = useState('');
+  const [followerCountInput, setFollowerCountInput] = useState('0');
   const [connecting, setConnecting] = useState(false);
   const connectionDialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -117,6 +121,10 @@ export default function AccountsPage() {
       return;
     }
     setSelectedPlatformToConnect(platform);
+    setAccountNameInput(account.account_name || `PT Wijaya Inovasi Gemilang (${platform.name})`);
+    setAccountHandleInput(account.account_handle || `@wijaya.${platform.id}`);
+    setFollowerCountInput(account.follower_count ? String(account.follower_count) : '0');
+    setConnectMode('manual');
   };
 
   const handleDisconnect = (id: string, name: string) => {
@@ -145,6 +153,38 @@ export default function AccountsPage() {
     });
   };
 
+  const handleManualConnectSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPlatformToConnect) return;
+
+    setConnecting(true);
+    try {
+      const res = await api.connectAccount({
+        platform: selectedPlatformToConnect.id,
+        account_name: accountNameInput.trim() || `PT Wijaya Inovasi Gemilang (${selectedPlatformToConnect.name})`,
+        account_handle: accountHandleInput.trim() || `@wijaya.${selectedPlatformToConnect.id}`,
+        follower_count: parseInt(followerCountInput, 10) || 0,
+      });
+
+      toast.success(
+        'Saluran Berhasil Terhubung',
+        `Akun ${res.account.account_name} (${res.account.account_handle}) kini aktif di workspace.`
+      );
+      setAccounts((prev) => {
+        const filtered = prev.filter((a) => a.id !== res.account.id && a.platform !== res.account.platform);
+        return [res.account, ...filtered];
+      });
+      setSelectedPlatformToConnect(null);
+    } catch (error: unknown) {
+      toast.error(
+        'Gagal Menghubungkan Saluran',
+        errorMessage(error, 'Terjadi kesalahan saat menambahkan saluran media sosial.')
+      );
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   const handleRealOAuthRedirect = async (platformId: string) => {
     setConnecting(true);
     try {
@@ -155,7 +195,7 @@ export default function AccountsPage() {
       } else {
         toast.error(
           'OAuth Belum Tersedia',
-          res.message || `Kredensial OAuth ${selectedPlatformToConnect?.name || platformId} belum dikonfigurasi oleh administrator.`
+          res.message || `Kredensial OAuth ${selectedPlatformToConnect?.name || platformId} belum dikonfigurasi di file .env backend.`
         );
       }
     } catch (error) {
@@ -302,6 +342,10 @@ export default function AccountsPage() {
                   type="button"
                   onClick={() => {
                     setSelectedPlatformToConnect(p);
+                    setAccountNameInput(`PT Wijaya Inovasi Gemilang (${p.name})`);
+                    setAccountHandleInput(`@wijaya.${p.id}`);
+                    setFollowerCountInput('0');
+                    setConnectMode('manual');
                   }}
                   className="ui-btn ui-btn-secondary text-[11px] py-1 px-2 shrink-0"
                   disabled={isAlreadyConnected}
@@ -325,7 +369,6 @@ export default function AccountsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="connect-account-title"
-            aria-describedby="connect-account-description"
           >
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -338,7 +381,7 @@ export default function AccountsPage() {
               <button
                 type="button"
                 onClick={() => setSelectedPlatformToConnect(null)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition"
                 aria-label="Tutup dialog koneksi akun"
                 disabled={connecting}
               >
@@ -346,48 +389,174 @@ export default function AccountsPage() {
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div className="text-xs text-slate-600 space-y-2 bg-slate-50 p-3 rounded border border-slate-200">
-                <div className="flex items-center gap-1.5 font-semibold text-slate-900">
-                  <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Otorisasi Resmi OAuth 2.0</span>
-                </div>
-                <p id="connect-account-description" className="text-[11px] text-slate-600 leading-relaxed">
-                  Anda akan diarahkan ke halaman resmi <strong>{selectedPlatformToConnect.name}</strong>. Kata sandi platform tidak pernah dimasukkan atau disimpan oleh Content Plan Studio.
-                </p>
-              </div>
+            {/* Mode Switcher Tabs */}
+            <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl text-xs font-semibold gap-1">
+              <button
+                type="button"
+                data-modal-initial-focus
+                onClick={() => setConnectMode('manual')}
+                className={`py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition ${
+                  connectMode === 'manual'
+                    ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    : 'text-slate-500 hover:text-slate-800 font-medium'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5 text-blue-600" />
+                <span>Tambah Akun Manual</span>
+              </button>
 
-              <div className="p-2.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[11px] space-y-1">
-                <div className="flex items-center gap-1 font-semibold">
-                  <Key className="w-3 h-3" />
-                  <span>Untuk administrator</span>
-                </div>
-                <p>
-                  Jika otorisasi belum tersedia, administrator perlu mengonfigurasi App ID, App Secret, dan callback URL {selectedPlatformToConnect.name} di server.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  data-modal-initial-focus
-                  onClick={() => setSelectedPlatformToConnect(null)}
-                  className="ui-btn ui-btn-secondary"
-                  disabled={connecting}
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleRealOAuthRedirect(selectedPlatformToConnect.id)}
-                  className="ui-btn ui-btn-primary"
-                  disabled={connecting}
-                >
-                  {connecting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-                  <span>{connecting ? 'Menyiapkan OAuth...' : `Lanjutkan ke ${selectedPlatformToConnect.name}`}</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setConnectMode('oauth')}
+                className={`py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition ${
+                  connectMode === 'oauth'
+                    ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    : 'text-slate-500 hover:text-slate-800 font-medium'
+                }`}
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
+                <span>Login Resmi (OAuth 2.0)</span>
+              </button>
             </div>
+
+            {/* Option 1: Manual Account Connect Mode (Immediate Persistence to Database) */}
+            {connectMode === 'manual' && (
+              <form onSubmit={handleManualConnectSubmit} className="space-y-3.5">
+                <div className="text-xs text-slate-600 space-y-1 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                  <span className="font-bold text-blue-950 block">Daftarkan Saluran Siap Pakai</span>
+                  <p className="text-[11px] text-blue-800/80 leading-relaxed">
+                    Daftarkan akun media sosial Anda ke dalam workspace agar siap dipilih saat menyusun rencana konten, kalender, dan postingan di Composer tanpa perlu menunggu API resmi.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="account-name-input" className="text-xs font-semibold text-slate-700 block mb-1">
+                    Nama Akun / Brand:
+                  </label>
+                  <input
+                    id="account-name-input"
+                    type="text"
+                    required
+                    value={accountNameInput}
+                    onChange={(e) => setAccountNameInput(e.target.value)}
+                    placeholder={`PT Wijaya Inovasi Gemilang (${selectedPlatformToConnect.name})`}
+                    className="ui-input text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="account-handle-input" className="text-xs font-semibold text-slate-700 block mb-1">
+                    Handle / Username Akun:
+                  </label>
+                  <input
+                    id="account-handle-input"
+                    type="text"
+                    required
+                    value={accountHandleInput}
+                    onChange={(e) => setAccountHandleInput(e.target.value)}
+                    placeholder={`@wijaya.${selectedPlatformToConnect.id}`}
+                    className="ui-input text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="account-followers-input" className="text-xs font-semibold text-slate-700 block mb-1">
+                    Jumlah Pengikut (Followers):
+                  </label>
+                  <input
+                    id="account-followers-input"
+                    type="number"
+                    min="0"
+                    value={followerCountInput}
+                    onChange={(e) => setFollowerCountInput(e.target.value)}
+                    placeholder="0"
+                    className="ui-input text-xs"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPlatformToConnect(null)}
+                    className="ui-btn ui-btn-secondary py-1.5 text-xs"
+                    disabled={connecting}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={connecting}
+                    className="ui-btn ui-btn-primary py-1.5 px-4 text-xs font-semibold"
+                  >
+                    {connecting ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Menyimpan Saluran...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Simpan &amp; Hubungkan Saluran</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Option 2: Official OAuth 2.0 Redirect Mode */}
+            {connectMode === 'oauth' && (
+              <div className="space-y-3">
+                <div className="text-xs text-slate-600 space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                    <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Otorisasi Resmi OAuth 2.0</span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Sistem akan mengarahkan browser Anda ke halaman login resmi <strong>{selectedPlatformToConnect.name}</strong> untuk memberikan izin token API otomatis.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] space-y-1">
+                  <div className="flex items-center gap-1 font-bold">
+                    <Key className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Konfigurasi Developer API:</span>
+                  </div>
+                  <p className="text-amber-800 leading-relaxed">
+                    Pastikan App ID &amp; App Secret untuk {selectedPlatformToConnect.name} telah dimasukkan ke file <code>.env</code> server backend jika ingin menggunakan alur otomatis ini.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPlatformToConnect(null)}
+                    className="ui-btn ui-btn-secondary py-1.5 text-xs"
+                    disabled={connecting}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRealOAuthRedirect(selectedPlatformToConnect.id)}
+                    className="ui-btn ui-btn-primary py-1.5 px-4 text-xs font-semibold"
+                    disabled={connecting}
+                  >
+                    {connecting ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Menyiapkan OAuth...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Lanjutkan ke {selectedPlatformToConnect.name}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -51,12 +51,46 @@ def list_social_accounts(request: HttpRequest):
 
 @router.post("/dashboard/accounts/create-manual", summary="Connect Social Account")
 def create_manual_social_account(request: HttpRequest, payload: ManualAccountCreateSchema):
-    get_current_user_and_workspace(request)
+    user, workspace = get_current_user_and_workspace(request)
     require_workspace_permission(request, "manage_social_accounts")
-    raise HttpError(
-        409,
-        "Akun manual tidak dapat ditandai terhubung karena tidak memiliki token publikasi. Konfigurasikan OAuth lalu hubungkan akun secara resmi.",
+
+    handle = payload.account_handle.strip() if payload.account_handle else f"@wijaya.{payload.platform}"
+    name = payload.account_name.strip() if payload.account_name else f"PT Wijaya Inovasi Gemilang ({payload.platform.title()})"
+    followers = payload.follower_count if payload.follower_count and payload.follower_count >= 0 else 0
+
+    account, created = SocialAccount.objects.get_or_create(
+        workspace=workspace,
+        platform=payload.platform,
+        account_platform_id=handle,
+        defaults={
+            "account_name": name,
+            "account_handle": handle,
+            "connection_status": SocialAccount.ConnectionStatus.CONNECTED,
+            "follower_count": followers,
+        },
     )
+    if not created:
+        account.connection_status = SocialAccount.ConnectionStatus.CONNECTED
+        account.account_name = name
+        account.account_handle = handle
+        if followers > 0:
+            account.follower_count = followers
+        account.save(update_fields=["connection_status", "account_name", "account_handle", "follower_count"])
+
+    return {
+        "success": True,
+        "account": {
+            "id": str(account.id),
+            "platform": account.platform,
+            "account_name": account.account_name,
+            "account_handle": account.account_handle,
+            "avatar_url": account.avatar_url,
+            "follower_count": account.follower_count,
+            "connection_status": account.connection_status,
+            "is_token_expiring_soon": account.is_token_expiring_soon,
+            "connected_at": account.connected_at.strftime("%d %b %Y"),
+        },
+    }
 
 
 @router.get("/dashboard/accounts/oauth-init", summary="Check and Initialize OAuth URL")
@@ -86,7 +120,7 @@ def init_oauth(request: HttpRequest, platform: str):
     if platform not in configured_platforms:
         return {
             "configured": False,
-            "message": f"Kredensial OAuth Developer (App ID / Secret) untuk {visible_platform_choices.get(platform, platform)} belum dikonfigurasi oleh administrator.",
+            "message": f"Kredensial OAuth Developer (App ID / Secret) untuk {visible_platform_choices.get(platform, platform)} belum dikonfigurasi di file .env backend. Anda dapat menggunakan tab Tambah Akun Manual di modal.",
         }
 
     try:

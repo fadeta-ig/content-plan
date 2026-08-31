@@ -49,6 +49,10 @@ const nextConfig = {
         source: '/static/:path*',
         destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8050'}/static/:path*`,
       },
+      {
+        source: '/media/:path*',
+        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8050'}/media/:path*`,
+      },
     ];
   },
 };

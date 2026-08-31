@@ -216,6 +216,21 @@ export const api = {
     );
   },
 
+  async connectAccount(payload: {
+    platform: string;
+    account_name?: string;
+    account_handle?: string;
+    follower_count?: number;
+  }) {
+    return fetcher<{ success: boolean; account: SocialAccount }>(
+      '/dashboard/accounts/create-manual',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  },
+
 
   // Unified Inbox
   async getInboxMessages(params?: { status?: string; platform?: string }) {

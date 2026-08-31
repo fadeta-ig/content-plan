@@ -399,6 +399,7 @@ function ComposerForm() {
                           alt={media.title || 'Media terlampir'}
                           width={24}
                           height={24}
+                          unoptimized
                           className="w-6 h-6 object-cover rounded"
                         />
                       ) : (
@@ -585,6 +586,7 @@ function ComposerForm() {
                       alt={attachedMedia[0].title || 'Pratinjau media'}
                       width={640}
                       height={360}
+                      unoptimized
                       className="max-h-64 w-auto max-w-full object-contain rounded mx-auto"
                     />
                   )}
