@@ -76,14 +76,14 @@ export default function Sidebar({
   return (
     <aside
       aria-hidden={!isOpen}
-      className={`fixed lg:sticky top-0 left-0 z-50 lg:z-40 bg-white border-r border-slate-200 flex flex-col shrink-0 min-h-screen text-slate-800 select-none transition-all duration-200 ease-in-out overflow-visible ${
+      className={`fixed lg:sticky top-0 left-0 z-50 lg:z-40 bg-white border-r border-slate-200 flex flex-col shrink-0 h-screen h-dvh max-h-screen text-slate-800 select-none transition-all duration-200 ease-in-out overflow-hidden ${
         isOpen ? 'w-64 translate-x-0' : 'w-64 -translate-x-full lg:w-0'
       }`}
     >
       {/* Inner wrapper to prevent content from collapsing weirdly */}
-      <div className="w-64 min-w-[16rem] flex flex-col min-h-screen">
+      <div className="w-64 min-w-[16rem] flex flex-col h-full max-h-screen overflow-hidden">
         {/* Brand Header */}
-        <div className="h-14 border-b border-slate-200 px-4 flex items-center">
+        <div className="h-14 border-b border-slate-200 px-4 flex items-center shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-7 h-7 rounded bg-slate-900 text-white flex items-center justify-center font-semibold text-xs tracking-tight shrink-0">
               CP
@@ -100,7 +100,7 @@ export default function Sidebar({
         </div>
 
         {/* Workspace Switcher */}
-        <div className="p-3 border-b border-slate-100 relative" ref={workspaceMenuRef}>
+        <div className="p-3 border-b border-slate-100 relative shrink-0" ref={workspaceMenuRef}>
           <button
             type="button"
             onClick={() => setWorkspaceMenuOpen((open) => !open)}
@@ -149,7 +149,7 @@ export default function Sidebar({
         </div>
 
         {/* Navigation Menu */}
-        <div className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+        <div className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto min-h-0">
           <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             Menu Utama
           </div>
@@ -179,7 +179,7 @@ export default function Sidebar({
         </div>
 
         {/* Footer Info */}
-        <div className="p-3 border-t border-slate-200 bg-slate-50/50">
+        <div className="p-3 border-t border-slate-200 bg-slate-50/50 shrink-0">
           <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
             <span className="flex items-center gap-1.5">
               <Building2 className="w-3 h-3" />

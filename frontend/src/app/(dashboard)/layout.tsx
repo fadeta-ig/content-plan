@@ -129,7 +129,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-[#f8fafc] text-slate-800">
+    <div className="flex h-screen h-dvh overflow-hidden bg-[#f8fafc] text-slate-800">
       <Sidebar
         activeWorkspace={activeWorkspace}
         workspaces={workspaces}
@@ -148,7 +148,7 @@ export default function DashboardLayout({
           aria-label="Tutup menu navigasi"
         />
       )}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 h-screen h-dvh overflow-hidden">
         <Header
           user={user}
           activeWorkspace={activeWorkspace}
