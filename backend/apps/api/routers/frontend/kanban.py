@@ -8,6 +8,8 @@ from django.http import HttpRequest
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
+from typing import Any
+
 from apps.composer.models import Idea
 
 from .helpers import frontend_auth, get_current_user_and_workspace, require_workspace_permission
@@ -21,6 +23,7 @@ class IdeaCreateSchema(Schema):
     content: str | None = ""
     status: str | None = "unassigned"
     group_id: uuid.UUID | None = None
+    attachments: list[dict[str, Any]] | None = None
 
 
 class IdeaStatusUpdateSchema(Schema):
@@ -31,6 +34,7 @@ class IdeaUpdateSchema(Schema):
     title: str | None = None
     content: str | None = None
     status: str | None = None
+    attachments: list[dict[str, Any]] | None = None
 
 
 def serialize_idea(i: Idea, default_status: str) -> dict:
@@ -39,6 +43,7 @@ def serialize_idea(i: Idea, default_status: str) -> dict:
         "title": i.title,
         "content": i.description or "",
         "status": i.status or default_status,
+        "attachments": i.attachments or [],
         "created_at": i.created_at.strftime("%d %b %Y"),
     }
 
@@ -81,6 +86,7 @@ def create_kanban_idea(request: HttpRequest, payload: IdeaCreateSchema):
         title=title,
         description=payload.content.strip() if payload.content else "",
         status=payload.status or "unassigned",
+        attachments=payload.attachments or [],
     )
 
     return {
@@ -90,6 +96,7 @@ def create_kanban_idea(request: HttpRequest, payload: IdeaCreateSchema):
             "title": idea.title,
             "content": idea.description,
             "status": idea.status,
+            "attachments": idea.attachments or [],
             "created_at": idea.created_at.strftime("%d %b %Y"),
         },
     }
@@ -132,6 +139,9 @@ def update_kanban_idea_details(request: HttpRequest, idea_id: uuid.UUID, payload
             raise HttpError(422, "Status ide tidak valid.")
         idea.status = payload.status
         updated_fields.append("status")
+    if payload.attachments is not None:
+        idea.attachments = payload.attachments
+        updated_fields.append("attachments")
 
     if updated_fields:
         idea.save(update_fields=updated_fields)
@@ -143,6 +153,7 @@ def update_kanban_idea_details(request: HttpRequest, idea_id: uuid.UUID, payload
             "title": idea.title,
             "content": idea.description,
             "status": idea.status,
+            "attachments": idea.attachments or [],
             "created_at": idea.created_at.strftime("%d %b %Y"),
         },
     }

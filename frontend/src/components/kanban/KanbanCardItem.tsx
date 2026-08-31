@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Calendar,
   Eye,
+  Paperclip,
 } from 'lucide-react';
 import { KanbanCard } from '@/lib/types';
 
@@ -78,6 +79,14 @@ export default function KanbanCardItem({
         <p className="text-slate-500 text-[11px] leading-relaxed line-clamp-2 font-sans">
           {card.content}
         </p>
+      )}
+
+      {/* Attachment Badge */}
+      {card.attachments && card.attachments.length > 0 && (
+        <div className="flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-50/90 px-1.5 py-0.5 rounded border border-blue-100/80 max-w-fit">
+          <Paperclip className="w-2.5 h-2.5 shrink-0 text-blue-500" />
+          <span>{card.attachments.length} lampiran / docs</span>
+        </div>
       )}
 
       {/* Card Footer */}

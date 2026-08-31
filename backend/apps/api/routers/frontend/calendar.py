@@ -29,6 +29,7 @@ class ShootingSessionCreateSchema(Schema):
     status: str | None = "planned"
     crew_members: list[dict[str, Any]] | None = None
     equipment_checklist: list[dict[str, Any]] | None = None
+    attachments: list[dict[str, Any]] | None = None
     related_idea_id: str | None = None
 
 
@@ -41,6 +42,7 @@ class ShootingSessionUpdateSchema(Schema):
     status: str | None = None
     crew_members: list[dict[str, Any]] | None = None
     equipment_checklist: list[dict[str, Any]] | None = None
+    attachments: list[dict[str, Any]] | None = None
     related_idea_id: str | None = None
 
 
@@ -144,6 +146,7 @@ def get_calendar_posts(request: HttpRequest, start_date: str | None = None, end_
                 "status": s.status,
                 "crew_members": s.crew_members or [],
                 "equipment_checklist": s.equipment_checklist or [],
+                "attachments": s.attachments or [],
                 "related_idea_id": str(s.related_idea_id) if s.related_idea_id else None,
                 "related_idea_title": s.related_idea.title if s.related_idea else None,
                 "platforms": ["shooting"],
@@ -206,6 +209,7 @@ def list_shooting_sessions(
             "status": s.status,
             "crew_members": s.crew_members or [],
             "equipment_checklist": s.equipment_checklist or [],
+            "attachments": s.attachments or [],
             "related_idea_id": str(s.related_idea_id) if s.related_idea_id else None,
             "related_idea_title": s.related_idea.title if s.related_idea else None,
             "created_at": s.created_at.isoformat(),
@@ -255,6 +259,7 @@ def create_shooting_session(request: HttpRequest, payload: ShootingSessionCreate
         status=selected_status,
         crew_members=payload.crew_members or [],
         equipment_checklist=payload.equipment_checklist or [],
+        attachments=payload.attachments or [],
         related_idea=related_idea,
         created_by=user,
     )
@@ -272,6 +277,7 @@ def create_shooting_session(request: HttpRequest, payload: ShootingSessionCreate
             "status": session.status,
             "crew_members": session.crew_members,
             "equipment_checklist": session.equipment_checklist,
+            "attachments": session.attachments or [],
             "related_idea_id": str(session.related_idea_id) if session.related_idea_id else None,
             "related_idea_title": session.related_idea.title if session.related_idea else None,
         },
@@ -296,6 +302,7 @@ def get_shooting_session_detail(request: HttpRequest, session_id: uuid.UUID):
             "status": session.status,
             "crew_members": session.crew_members or [],
             "equipment_checklist": session.equipment_checklist or [],
+            "attachments": session.attachments or [],
             "related_idea_id": str(session.related_idea_id) if session.related_idea_id else None,
             "related_idea_title": session.related_idea.title if session.related_idea else None,
             "created_at": session.created_at.isoformat(),
@@ -332,6 +339,8 @@ def update_shooting_session(request: HttpRequest, session_id: uuid.UUID, payload
         session.crew_members = payload.crew_members
     if payload.equipment_checklist is not None:
         session.equipment_checklist = payload.equipment_checklist
+    if payload.attachments is not None:
+        session.attachments = payload.attachments
     if payload.related_idea_id is not None:
         if payload.related_idea_id:
             try:
@@ -362,6 +371,7 @@ def update_shooting_session(request: HttpRequest, session_id: uuid.UUID, payload
             "status": session.status,
             "crew_members": session.crew_members,
             "equipment_checklist": session.equipment_checklist,
+            "attachments": session.attachments or [],
             "related_idea_id": str(session.related_idea_id) if session.related_idea_id else None,
             "related_idea_title": session.related_idea.title if session.related_idea else None,
         },

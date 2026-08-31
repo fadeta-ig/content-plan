@@ -102,6 +102,16 @@ export interface OverviewMetrics {
   }[];
 }
 
+export interface AttachmentItem {
+  id: string;
+  type: 'file' | 'link';
+  title: string;
+  url: string;
+  file_size?: number;
+  mime_type?: string;
+  provider?: 'google_drive' | 'google_docs' | 'google_sheets' | 'notion' | 'figma' | 'canva' | 'custom';
+}
+
 export interface ShootingCrewMember {
   name: string;
   role: string;
@@ -122,6 +132,7 @@ export interface ShootingSession {
   status: 'planned' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
   crew_members: ShootingCrewMember[];
   equipment_checklist: ShootingEquipmentItem[];
+  attachments?: AttachmentItem[];
   related_idea_id?: string | null;
   related_idea_title?: string | null;
   created_at?: string;
@@ -143,6 +154,7 @@ export interface CalendarEvent {
   media?: MediaItem[];
   crew_members?: ShootingCrewMember[];
   equipment_checklist?: ShootingEquipmentItem[];
+  attachments?: AttachmentItem[];
   related_idea_id?: string | null;
   related_idea_title?: string | null;
 }
@@ -163,6 +175,7 @@ export interface KanbanCard {
   status?: string;
   tags?: string[];
   media_url?: string;
+  attachments?: AttachmentItem[];
 }
 
 export interface KanbanColumn {

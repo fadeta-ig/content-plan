@@ -11,11 +11,14 @@ import {
   Copy,
   FileText,
   Clapperboard,
+  Paperclip,
 } from 'lucide-react';
-import { KanbanCard } from '@/lib/types';
+import { KanbanCard, AttachmentItem } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { api, getErrorMessage } from '@/lib/api';
+import AttachmentManager from '@/components/ui/AttachmentManager';
+import AttachmentList from '@/components/ui/AttachmentList';
 
 const STATUS_STEPS = [
   { id: 'unassigned', label: 'Ide / Backlog', color: 'bg-slate-100 text-slate-700 border-slate-300' },
@@ -46,6 +49,7 @@ export default function IdeaPreviewModal({
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(idea.title);
   const [editContent, setEditContent] = useState(idea.content || '');
+  const [editAttachments, setEditAttachments] = useState<AttachmentItem[]>(idea.attachments || []);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [currentColumn, setCurrentColumn] = useState(columnId || idea.status || 'unassigned');
@@ -74,17 +78,19 @@ export default function IdeaPreviewModal({
       await api.updateIdea(idea.id, {
         title: editTitle.trim(),
         content: editContent.trim(),
+        attachments: editAttachments,
       });
 
       const updated: KanbanCard = {
         ...idea,
         title: editTitle.trim(),
         content: editContent.trim(),
+        attachments: editAttachments,
       };
 
       onUpdateIdea(updated);
       setIsEditing(false);
-      toast.success('Naskah Diperbarui', 'Perubahan judul dan naskah ide berhasil disimpan.');
+      toast.success('Naskah Diperbarui', 'Perubahan judul, naskah, dan lampiran ide berhasil disimpan.');
     } catch (error: unknown) {
       toast.error('Gagal Memperbarui', getErrorMessage(error, 'Gagal menyimpan perubahan.'));
     } finally {
@@ -298,7 +304,7 @@ export default function IdeaPreviewModal({
                   </label>
                   <textarea
                     id="edit-idea-content"
-                    rows={12}
+                    rows={8}
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
                     className="w-full bg-white border border-slate-200 rounded-md p-3 text-xs text-slate-800 focus:outline-none focus:border-blue-500 leading-relaxed font-sans"
@@ -306,7 +312,18 @@ export default function IdeaPreviewModal({
                   />
                 </div>
 
-                <div className="flex justify-end gap-2 pt-1">
+                {/* Attachment Manager in Edit Mode */}
+                <div className="pt-2 border-t border-slate-200/80">
+                  <AttachmentManager
+                    attachments={editAttachments}
+                    onChange={setEditAttachments}
+                    disabled={saving}
+                    label="Lampiran & Tautan Referensi"
+                    helperText="Upload dokumen (PDF/Word) atau tautkan Google Docs/GDrive."
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
                   <button
                     type="button"
                     disabled={saving}
@@ -347,6 +364,7 @@ export default function IdeaPreviewModal({
                     onClick={() => {
                       setEditTitle(idea.title);
                       setEditContent(idea.content || '');
+                      setEditAttachments(idea.attachments || []);
                       setIsEditing(true);
                     }}
                     className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50/80 border border-blue-200 hover:bg-blue-100 px-2 py-1 rounded-md flex items-center gap-1 transition font-medium"
@@ -372,6 +390,17 @@ export default function IdeaPreviewModal({
                 ) : (
                   <div className="py-8 text-center text-slate-400 text-xs italic bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
                     Belum ada naskah atau brief tertulis. Klik &ldquo;Ubah Naskah&rdquo; di atas untuk menambahkan catatan naskah.
+                  </div>
+                )}
+
+                {/* Attachments Section in View Mode */}
+                {idea.attachments && idea.attachments.length > 0 && (
+                  <div className="pt-3 border-t border-slate-100 space-y-2">
+                    <h4 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Paperclip className="w-3 h-3 text-slate-500" />
+                      <span>Lampiran &amp; Tautan Dokumen ({idea.attachments.length})</span>
+                    </h4>
+                    <AttachmentList attachments={idea.attachments} />
                   </div>
                 )}
               </div>

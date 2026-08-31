@@ -15,6 +15,7 @@ import {
   NotificationItem,
   TeamMember,
   ShootingSession,
+  AttachmentItem,
 } from './types';
 
 const API_BASE = '/api/v1/frontend';
@@ -171,7 +172,7 @@ export const api = {
     return fetcher<{ columns: KanbanColumn[] }>('/dashboard/kanban');
   },
 
-  async createIdea(payload: { workspace_id?: string; title: string; content?: string; status?: string }) {
+  async createIdea(payload: { workspace_id?: string; title: string; content?: string; status?: string; attachments?: AttachmentItem[] }) {
     return fetcher<{ success: boolean; idea: KanbanCard }>('/dashboard/kanban/create', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -185,7 +186,7 @@ export const api = {
     });
   },
 
-  async updateIdea(ideaId: string, payload: { title?: string; content?: string; status?: string }) {
+  async updateIdea(ideaId: string, payload: { title?: string; content?: string; status?: string; attachments?: AttachmentItem[] }) {
     return fetcher<{ success: boolean; idea: KanbanCard }>(`/dashboard/kanban/${ideaId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
@@ -378,6 +379,7 @@ export const api = {
     status?: string;
     crew_members?: { name: string; role: string }[];
     equipment_checklist?: { item: string; checked: boolean }[];
+    attachments?: AttachmentItem[];
     related_idea_id?: string | null;
   }) {
     return fetcher<{ success: boolean; message: string; session: ShootingSession }>('/dashboard/shooting-sessions', {
@@ -395,6 +397,7 @@ export const api = {
     status?: string;
     crew_members?: { name: string; role: string }[];
     equipment_checklist?: { item: string; checked: boolean }[];
+    attachments?: AttachmentItem[];
     related_idea_id?: string | null;
   }) {
     return fetcher<{ success: boolean; message: string; session: ShootingSession }>(`/dashboard/shooting-sessions/${sessionId}`, {

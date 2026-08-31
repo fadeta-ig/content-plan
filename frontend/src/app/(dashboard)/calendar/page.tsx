@@ -20,6 +20,7 @@ import {
   Tag,
   Share2,
   RefreshCw,
+  Paperclip,
 } from 'lucide-react';
 import { api, getErrorMessage } from '@/lib/api';
 import {
@@ -27,10 +28,13 @@ import {
   KanbanColumn,
   ShootingCrewMember,
   ShootingEquipmentItem,
+  AttachmentItem,
 } from '@/lib/types';
 import SocialIcon from '@/components/ui/SocialIcon';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
+import AttachmentManager from '@/components/ui/AttachmentManager';
+import AttachmentList from '@/components/ui/AttachmentList';
 
 const DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const DAYS_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -101,6 +105,7 @@ export default function CalendarPage() {
   });
   const [shootDescription, setShootDescription] = useState('');
   const [shootStatus, setShootStatus] = useState<string>('planned');
+  const [shootAttachments, setShootAttachments] = useState<AttachmentItem[]>([]);
   
   // Crew & Equipment state in modal
   const [crewList, setCrewList] = useState<ShootingCrewMember[]>([
@@ -434,6 +439,7 @@ export default function CalendarPage() {
         status: shootStatus,
         crew_members: cleanCrew,
         equipment_checklist: cleanEquipment,
+        attachments: shootAttachments,
         related_idea_id: selectedIdeaId || null,
       });
 
@@ -449,6 +455,7 @@ export default function CalendarPage() {
         status: shootStatus,
         crew_members: cleanCrew,
         equipment_checklist: cleanEquipment,
+        attachments: shootAttachments,
         related_idea_id: newSession?.related_idea_id || selectedIdeaId || null,
         related_idea_title: newSession?.related_idea_title || (kanbanIdeas.find(i => i.id === selectedIdeaId)?.title) || null,
         platforms: ['shooting'],
@@ -461,6 +468,7 @@ export default function CalendarPage() {
       setShootDescription('');
       setShootLocation('');
       setSelectedIdeaId('');
+      setShootAttachments([]);
     } catch (error: unknown) {
       toast.error('Gagal Menyimpan Shooting', getErrorMessage(error, 'Gagal menyimpan sesi shooting.'));
     }
@@ -930,6 +938,13 @@ export default function CalendarPage() {
                           {ev.caption || ev.description}
                         </p>
                       )}
+
+                      {/* Attachments preview */}
+                      {ev.attachments && ev.attachments.length > 0 && (
+                        <div className="mt-1">
+                          <AttachmentList attachments={ev.attachments} compact />
+                        </div>
+                      )}
                     </div>
                   );
                 })
@@ -1277,6 +1292,16 @@ export default function CalendarPage() {
                     </div>
                   </div>
 
+                  {/* Attachment Manager for Shooting Session */}
+                  <div className="pt-2 border-t border-slate-200/80">
+                    <AttachmentManager
+                      attachments={shootAttachments}
+                      onChange={setShootAttachments}
+                      label="Call Sheet & Tautan Dokumen Shooting"
+                      helperText="Lampirkan Call Sheet PDF, script naskah, atau link Google Drive / Docs folder footage."
+                    />
+                  </div>
+
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
                     <button
                       type="button"
@@ -1450,6 +1475,17 @@ export default function CalendarPage() {
                     </div>
                   </div>
                 )}
+
+              {/* Attachments Section in Detail Modal */}
+              {selectedEvent.attachments && selectedEvent.attachments.length > 0 && (
+                <div className="space-y-1.5 pt-1 border-t border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                    <Paperclip className="w-3.5 h-3.5 text-slate-700" />
+                    <span>Lampiran Dokumen &amp; Tautan Cloud ({selectedEvent.attachments.length})</span>
+                  </span>
+                  <AttachmentList attachments={selectedEvent.attachments} />
+                </div>
+              )}
             </div>
 
             {/* Footer */}

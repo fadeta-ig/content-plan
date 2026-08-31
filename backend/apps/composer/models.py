@@ -150,6 +150,11 @@ class Idea(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, default="")
     tags = models.JSONField(default=list, blank=True)
+    attachments = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Lampiran file dan tautan dokumen eksternal (GDrive, GDocs, dll.)",
+    )
     media_asset = models.ForeignKey(
         "media_library.MediaAsset",
         on_delete=models.SET_NULL,

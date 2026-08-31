@@ -235,6 +235,11 @@ class ShootingSession(models.Model):
     status = models.CharField(max_length=30, choices=Status.choices, default=Status.PLANNED, db_index=True)
     crew_members = models.JSONField(default=list, blank=True)
     equipment_checklist = models.JSONField(default=list, blank=True)
+    attachments = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Lampiran file & tautan dokumen eksternal (Call Sheet, GDrive, skrip).",
+    )
     related_idea = models.ForeignKey(
         "composer.Idea",
         on_delete=models.SET_NULL,

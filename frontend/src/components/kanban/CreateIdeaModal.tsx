@@ -5,9 +5,10 @@ import {
   X,
   Plus,
 } from 'lucide-react';
-import { KanbanCard } from '@/lib/types';
+import { KanbanCard, AttachmentItem } from '@/lib/types';
 import { api, getErrorMessage } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
+import AttachmentManager from '@/components/ui/AttachmentManager';
 
 interface CreateIdeaModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ export default function CreateIdeaModal({
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [status, setStatus] = useState('unassigned');
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [creating, setCreating] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +91,7 @@ export default function CreateIdeaModal({
         title: title.trim(),
         content: content.trim(),
         status: status || 'unassigned',
+        attachments,
       });
 
       const newCard: KanbanCard = {
@@ -96,6 +99,7 @@ export default function CreateIdeaModal({
         title: title.trim(),
         content: content.trim(),
         status: status || 'unassigned',
+        attachments,
         created_at: res.idea?.created_at || 'Hari Ini',
       };
 
@@ -103,6 +107,7 @@ export default function CreateIdeaModal({
       setTitle('');
       setContent('');
       setStatus('unassigned');
+      setAttachments([]);
       onSuccess(newCard, status || 'unassigned');
     } catch (error: unknown) {
       toast.error('Gagal Menyimpan Ide', getErrorMessage(error, 'Terjadi kesalahan saat menyimpan ide.'));
@@ -171,11 +176,22 @@ export default function CreateIdeaModal({
               </label>
               <textarea
                 id="idea-content"
-                rows={7}
+                rows={5}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 placeholder="Tema, durasi, format, naskah alur pembicaraan, outline poin-poin ide..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-md p-2.5 text-xs text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500 leading-relaxed font-sans"
+              />
+            </div>
+
+            {/* Attachment Manager */}
+            <div className="pt-1 border-t border-slate-100">
+              <AttachmentManager
+                attachments={attachments}
+                onChange={setAttachments}
+                disabled={creating}
+                label="Lampiran & Tautan Referensi"
+                helperText="Lampirkan dokumen naskah (PDF/Word), link Google Docs/Drive, atau Notion."
               />
             </div>
 
