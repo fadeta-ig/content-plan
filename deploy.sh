@@ -18,7 +18,7 @@ pip install -r requirements.txt --quiet
 echo "⚛️ [2/5] Memvalidasi backend dan membangun frontend..."
 python3 manage.py check --deploy --settings=config.settings.production
 cd "$PROJECT_ROOT/frontend"
-npm ci --prefer-offline
+npm ci --prefer-offline || npm install --prefer-offline --no-audit
 npm run lint
 npx tsc --noEmit
 npm run build
