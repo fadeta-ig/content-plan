@@ -1,14 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Search,
-  Bell,
   Plus,
   LogOut,
-  User as UserIcon,
   Menu,
 } from 'lucide-react';
 import { User, Workspace } from '@/lib/types';
@@ -20,21 +18,45 @@ import NotificationDropdown from '@/components/layout/NotificationDropdown';
 interface HeaderProps {
   user?: User | null;
   activeWorkspace?: Workspace | null;
-  isBackendConnected?: boolean;
   onToggleSidebar?: () => void;
   isSidebarOpen?: boolean;
 }
 
+const SEARCHABLE_PAGES = [
+  { label: 'Overview', href: '/', keywords: 'dashboard ringkasan', roles: null },
+  { label: 'Composer', href: '/composer', keywords: 'buat post konten', roles: ['owner', 'manager', 'editor', 'contributor'] },
+  { label: 'Kalender & Shooting', href: '/calendar', keywords: 'jadwal produksi', roles: null },
+  { label: 'Ide Kanban', href: '/kanban', keywords: 'ide workflow', roles: ['owner', 'manager', 'editor', 'contributor'] },
+  { label: 'Kotak Masuk', href: '/inbox', keywords: 'pesan komentar mention', roles: ['owner', 'manager', 'editor'] },
+  { label: 'Analitik', href: '/analytics', keywords: 'laporan insight', roles: null },
+  { label: 'Media Library', href: '/media-library', keywords: 'gambar video berkas', roles: ['owner', 'manager', 'editor', 'contributor'] },
+  { label: 'Saluran Akun', href: '/accounts', keywords: 'social oauth', roles: ['owner', 'manager'] },
+  { label: 'Pengaturan', href: '/settings', keywords: 'anggota workspace konfigurasi', roles: ['owner', 'manager'] },
+];
+
 export default function Header({
   user,
   activeWorkspace,
-  isBackendConnected = true,
   onToggleSidebar,
   isSidebarOpen,
 }: HeaderProps) {
   const router = useRouter();
   const toast = useToast();
   const { confirm } = useConfirm();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const searchablePages = SEARCHABLE_PAGES.filter(
+    (page) => !page.roles || (activeWorkspace?.role && page.roles.includes(activeWorkspace.role))
+  );
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase('id-ID');
+  const searchResults = normalizedQuery
+    ? searchablePages.filter((page) => `${page.label} ${page.keywords}`.toLocaleLowerCase('id-ID').includes(normalizedQuery)).slice(0, 5)
+    : [];
+
+  const navigateToSearchResult = (href: string) => {
+    setSearchQuery('');
+    router.push(href);
+  };
 
   const handleLogout = () => {
     confirm({
@@ -45,11 +67,17 @@ export default function Header({
       onConfirm: async () => {
         try {
           await api.logout();
-        } catch (e) {
-          // Proceed anyway
+          toast.info('Sesi Berakhir', 'Anda telah berhasil keluar.');
+          router.replace('/login');
+        } catch (error) {
+          toast.error(
+            'Gagal Keluar',
+            error instanceof Error && error.message
+              ? error.message
+              : 'Sesi masih aktif. Periksa koneksi lalu coba lagi.'
+          );
+          throw error;
         }
-        toast.info('Sesi Berakhir', 'Anda telah berhasil keluar.');
-        router.push('/login');
       },
     });
   };
@@ -62,7 +90,8 @@ export default function Header({
           type="button"
           onClick={onToggleSidebar}
           className="p-1.5 rounded-md hover:bg-slate-100 text-slate-600 focus:outline-none transition"
-          title={isSidebarOpen ? 'Sembunyikan Sidebar' : 'Tampilkan Sidebar'}
+          aria-label={isSidebarOpen ? 'Sembunyikan menu navigasi' : 'Tampilkan menu navigasi'}
+          aria-expanded={isSidebarOpen}
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -70,35 +99,58 @@ export default function Header({
         <div className="hidden sm:flex items-center gap-3 w-48 md:w-72">
           <div className="relative w-full">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Cari post, akun, ide..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-slate-400 transition"
-            />
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (searchResults[0]) navigateToSearchResult(searchResults[0].href);
+              }}
+            >
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Cari menu..."
+                aria-label="Cari menu aplikasi"
+                role="combobox"
+                aria-expanded={searchResults.length > 0}
+                aria-controls="menu-search-results"
+                aria-autocomplete="list"
+                className="w-full bg-slate-50 border border-slate-200 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-slate-400 transition"
+              />
+            </form>
+            {searchResults.length > 0 && (
+              <div id="menu-search-results" className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg p-1 z-50" role="listbox">
+                {searchResults.map((page) => (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    key={page.href}
+                    onClick={() => navigateToSearchResult(page.href)}
+                    className="block w-full text-left px-2.5 py-1.5 rounded text-xs text-slate-700 hover:bg-slate-100"
+                  >
+                    {page.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Action Buttons & Profile */}
       <div className="flex items-center gap-3">
-        {/* Backend Status Indicator */}
-        <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-600">
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${
-              isBackendConnected ? 'bg-emerald-500' : 'bg-amber-500'
-            }`}
-          />
-          <span>{isBackendConnected ? 'Engine Siap' : 'Mode Offline'}</span>
-        </div>
+        <span className="hidden lg:block max-w-36 truncate text-[11px] text-slate-500" title={activeWorkspace?.name}>
+          {activeWorkspace?.name}
+        </span>
 
         {/* Quick Post Button */}
-        <Link
-          href="/composer"
-          className="ui-btn ui-btn-primary"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Buat Post</span>
-        </Link>
+        {['owner', 'manager', 'editor', 'contributor'].includes(activeWorkspace?.role || '') && (
+          <Link href="/composer" className="ui-btn ui-btn-primary">
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Buat Post</span>
+          </Link>
+        )}
 
         {/* Notifications */}
         <NotificationDropdown />
@@ -118,8 +170,9 @@ export default function Header({
           </div>
 
           <button
+            type="button"
             onClick={handleLogout}
-            title="Keluar / Logout"
+            aria-label="Keluar dari aplikasi"
             className="text-slate-400 hover:text-rose-600 p-1.5 rounded hover:bg-rose-50 transition ml-1"
           >
             <LogOut className="w-4 h-4" />

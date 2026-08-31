@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
-import Link from 'next/link';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Calendar as CalendarIcon,
@@ -11,34 +10,25 @@ import {
   Clock,
   Filter,
   X,
-  Eye,
-  CheckCircle2,
-  ListFilter,
-  Layers,
-  ArrowRight,
-  Move,
   Clapperboard,
-  Video,
   MapPin,
   Users,
   CheckSquare,
   Square,
   Sparkles,
   Trash2,
-  Edit3,
-  CalendarRange,
-  LayoutGrid,
-  ListCheck,
   Tag,
-  AlertCircle,
   Share2,
-  Radio,
-  SlidersHorizontal,
+  RefreshCw,
 } from 'lucide-react';
-import { api } from '@/lib/api';
-import { CalendarEvent, ShootingCrewMember, ShootingEquipmentItem, ShootingSession } from '@/lib/types';
+import { api, getErrorMessage } from '@/lib/api';
+import {
+  CalendarEvent,
+  KanbanColumn,
+  ShootingCrewMember,
+  ShootingEquipmentItem,
+} from '@/lib/types';
 import SocialIcon from '@/components/ui/SocialIcon';
-import DateTimePicker from '@/components/ui/DateTimePicker';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 
@@ -119,42 +109,98 @@ export default function CalendarPage() {
   const [newCrewName, setNewCrewName] = useState('');
   const [newCrewRole, setNewCrewRole] = useState('Talent / Host');
   
-  const [equipmentList, setEquipmentList] = useState<ShootingEquipmentItem[]>([
+  const [equipmentList] = useState<ShootingEquipmentItem[]>([
     { item: 'Kamera Utama (Sony A7IV)', checked: true },
     { item: 'Mic Wireless Clip-on', checked: true },
     { item: 'Lighting Softbox & RGB', checked: false },
   ]);
-  const [newEquipmentItem, setNewEquipmentItem] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const scheduleDialogRef = useRef<HTMLDivElement>(null);
+  const eventDialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   // Drag-and-drop state
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
+  const selectedEventId = selectedEvent?.id;
+
+  useEffect(() => {
+    if (!isScheduleModalOpen && !selectedEventId) return;
+    const activeDialogRef = isScheduleModalOpen ? scheduleDialogRef : eventDialogRef;
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusTimer = window.setTimeout(() => {
+      activeDialogRef.current?.querySelector<HTMLElement>('[data-modal-initial-focus]')?.focus();
+    }, 0);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelectorAll('[role="dialog"][aria-modal="true"]').length > 1) return;
+      if (event.key === 'Escape') {
+        setIsScheduleModalOpen(false);
+        setSelectedEvent(null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = activeDialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [isScheduleModalOpen, selectedEventId]);
   const dragDataRef = useRef<{ eventId: string; originalDate: string; eventType: 'post' | 'shooting' } | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
-  const loadCalendarData = async () => {
+  const loadCalendarData = useCallback(async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const startDate = new Date(year, month - 1, 1).toISOString();
       const endDate = new Date(year, month + 2, 0).toISOString();
       
-      const [calData, kanbanData] = await Promise.all([
-        api.getCalendarEvents({ start_date: startDate, end_date: endDate }),
-        api.getKanbanIdeas().catch(() => ({ columns: [] })),
-      ]);
+      const calData = await api.getCalendarEvents({ start_date: startDate, end_date: endDate });
+      let kanbanData: { columns: KanbanColumn[] } = { columns: [] };
+      try {
+        kanbanData = await api.getKanbanIdeas();
+      } catch (error) {
+        setKanbanIdeas([]);
+        toast.warning(
+          'Ide Kanban Tidak Dimuat',
+          error instanceof Error && error.message
+            ? error.message
+            : 'Kalender tetap tersedia, tetapi daftar ide terkait belum dapat dimuat.'
+        );
+      }
 
       if (calData && calData.events) {
         setEvents(calData.events);
       }
       if (kanbanData && kanbanData.columns) {
-        const allCards = kanbanData.columns.flatMap((col: any) => col.cards || []);
+        const allCards = kanbanData.columns.flatMap((column) => column.cards || []);
         setKanbanIdeas(allCards);
 
         // Check if query params has idea_id
         const paramIdeaId = searchParams.get('idea_id');
         if (paramIdeaId) {
-          const found = allCards.find((c: any) => c.id === paramIdeaId);
+          const found = allCards.find((card) => card.id === paramIdeaId);
           if (found) {
             setSelectedIdeaId(found.id);
             setShootTitle(found.title);
@@ -164,17 +210,19 @@ export default function CalendarPage() {
           }
         }
       }
-    } catch (err: any) {
-      toast.error('Gagal Memuat Kalender', err.message || 'Tidak dapat terhubung ke server.');
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, 'Tidak dapat terhubung ke server.');
+      setLoadError(message);
+      toast.error('Gagal Memuat Kalender', message);
       setEvents([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [month, searchParams, toast, year]);
 
   useEffect(() => {
-    loadCalendarData();
-  }, [currentDate]);
+    void loadCalendarData();
+  }, [loadCalendarData]);
 
   // Calendar cells generation
   const firstDayIndex = new Date(year, month, 1).getDay();
@@ -321,12 +369,12 @@ export default function CalendarPage() {
           `Postingan berhasil dipindahkan ke tanggal ${targetDay} ${MONTH_NAMES[month]} ${year}.`
         );
       }
-    } catch (err: any) {
+    } catch (error: unknown) {
       // Rollback on error
       setEvents((prev) =>
         prev.map((ev) => (ev.id === eventId ? { ...ev, start: originalDate } : ev))
       );
-      toast.error('Gagal Memindahkan Jadwal', err.message || 'Terjadi kesalahan saat memindahkan jadwal.');
+      toast.error('Gagal Memindahkan Jadwal', getErrorMessage(error, 'Terjadi kesalahan saat memindahkan jadwal.'));
     } finally {
       dragDataRef.current = null;
     }
@@ -360,8 +408,8 @@ export default function CalendarPage() {
       toast.success('Jadwal Ditambahkan', 'Postingan media sosial berhasil dijadwalkan.');
       setIsScheduleModalOpen(false);
       setPostCaption('');
-    } catch (err: any) {
-      toast.error('Gagal Menjadwalkan', err.message || 'Tidak dapat menyimpan postingan ke server.');
+    } catch (error: unknown) {
+      toast.error('Gagal Menjadwalkan', getErrorMessage(error, 'Tidak dapat menyimpan postingan ke server.'));
     }
   };
 
@@ -413,8 +461,8 @@ export default function CalendarPage() {
       setShootDescription('');
       setShootLocation('');
       setSelectedIdeaId('');
-    } catch (err: any) {
-      toast.error('Gagal Menyimpan Shooting', err.message || 'Gagal menyimpan sesi shooting.');
+    } catch (error: unknown) {
+      toast.error('Gagal Menyimpan Shooting', getErrorMessage(error, 'Gagal menyimpan sesi shooting.'));
     }
   };
 
@@ -434,8 +482,8 @@ export default function CalendarPage() {
       await api.updateShootingSession(selectedEvent.id, {
         equipment_checklist: updatedChecklist,
       });
-    } catch (err: any) {
-      toast.error('Gagal Update Checklist', err.message);
+    } catch (error: unknown) {
+      toast.error('Gagal Update Checklist', getErrorMessage(error, 'Checklist belum berhasil diperbarui.'));
     }
   };
 
@@ -457,8 +505,8 @@ export default function CalendarPage() {
           }
           setEvents((prev) => prev.filter((ev) => ev.id !== event.id));
           setSelectedEvent(null);
-        } catch (err: any) {
-          toast.error('Gagal Menghapus', err.message);
+        } catch (error: unknown) {
+          toast.error('Gagal Menghapus', getErrorMessage(error, 'Jadwal belum berhasil dihapus.'));
         }
       },
     });
@@ -523,6 +571,19 @@ export default function CalendarPage() {
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <div className="ui-card border-rose-200 bg-rose-50 text-rose-800 p-3 flex items-center justify-between gap-3" role="alert">
+          <span className="text-xs">Kalender gagal dimuat: {loadError}</span>
+          <button type="button" className="ui-btn ui-btn-secondary shrink-0" onClick={() => void loadCalendarData()}>
+            <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
+          </button>
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="ui-card py-6 text-center text-xs text-slate-500" role="status">Memuat kalender dan sesi shooting...</div>
+      )}
 
       {/* Filter Bar */}
       <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2.5 text-xs">
@@ -609,8 +670,19 @@ export default function CalendarPage() {
           </div>
 
           {/* Month Day Cells */}
-          <div className="grid grid-cols-7 divide-x divide-y divide-slate-200 bg-white">
+          <div
+            className="grid grid-cols-7 divide-x divide-y divide-slate-200 bg-white"
+            role="grid"
+            aria-label={`Kalender ${MONTH_NAMES[month]} ${year}`}
+          >
             {calendarCells.map((cell, idx) => {
+              const cellDate = new Date(year, month + cell.monthOffset, cell.day);
+              const cellDateLabel = cellDate.toLocaleDateString('id-ID', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+              });
               const isToday =
                 cell.isCurrent &&
                 isCurrentMonthThisMonth &&
@@ -634,6 +706,16 @@ export default function CalendarPage() {
                 <div
                   key={`cell-${idx}`}
                   onClick={() => cell.isCurrent && handleDateClick(cell.day, false)}
+                  onKeyDown={(event) => {
+                    if (cell.isCurrent && (event.key === 'Enter' || event.key === ' ')) {
+                      event.preventDefault();
+                      handleDateClick(cell.day, false);
+                    }
+                  }}
+                  role="gridcell"
+                  tabIndex={cell.isCurrent ? 0 : -1}
+                  aria-label={cellDateLabel}
+                  aria-selected={isSelected}
                   onDragOver={(e) => (cell.isCurrent ? handleCellDragOver(e, cell.day) : undefined)}
                   onDragLeave={cell.isCurrent ? handleCellDragLeave : undefined}
                   onDrop={(e) => (cell.isCurrent ? handleCellDrop(e, cell.day) : undefined)}
@@ -673,8 +755,9 @@ export default function CalendarPage() {
                           e.stopPropagation();
                           handleDateClick(cell.day, true);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded bg-white border border-slate-200 text-slate-600 hover:text-slate-900 transition shadow-2xs"
+                        className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-0.5 rounded bg-white border border-slate-200 text-slate-600 hover:text-slate-900 transition shadow-2xs"
                         title="Tambah jadwal"
+                        aria-label={`Tambah jadwal pada ${cellDateLabel}`}
                       >
                         <Plus className="w-3 h-3" />
                       </button>
@@ -696,6 +779,16 @@ export default function CalendarPage() {
                             e.stopPropagation();
                             setSelectedEvent(ev);
                           }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setSelectedEvent(ev);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Buka detail ${ev.title}`}
                           className={`px-1.5 py-0.5 rounded border text-[10px] leading-tight transition cursor-grab active:cursor-grabbing truncate flex items-center gap-1 ${
                             isShooting
                               ? 'bg-slate-100 border-slate-300 text-slate-900 font-semibold'
@@ -863,7 +956,13 @@ export default function CalendarPage() {
       {/* ========================================================================= */}
       {isScheduleModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto">
+          <div
+            ref={scheduleDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="schedule-agenda-title"
+            className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto"
+          >
             {/* Modal Header */}
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
               <div className="flex items-center gap-2">
@@ -871,7 +970,7 @@ export default function CalendarPage() {
                   <Plus className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <h2 className="text-xs font-bold text-slate-900">Tambah Agenda</h2>
+                  <h2 id="schedule-agenda-title" className="text-xs font-bold text-slate-900">Tambah Agenda</h2>
                   <p className="text-[10px] text-slate-500">
                     Dijadwalkan untuk tanggal: {selectedDayNumber} {MONTH_NAMES[month]} {year}
                   </p>
@@ -880,6 +979,7 @@ export default function CalendarPage() {
               <button
                 type="button"
                 onClick={() => setIsScheduleModalOpen(false)}
+                aria-label="Tutup formulir tambah agenda"
                 className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
               >
                 <X className="w-4 h-4" />
@@ -891,6 +991,7 @@ export default function CalendarPage() {
               <button
                 type="button"
                 onClick={() => setActiveScheduleTab('post')}
+                aria-pressed={activeScheduleTab === 'post'}
                 className={`flex-1 py-1.5 rounded text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
                   activeScheduleTab === 'post'
                     ? 'bg-white text-slate-900 shadow-xs'
@@ -903,6 +1004,7 @@ export default function CalendarPage() {
               <button
                 type="button"
                 onClick={() => setActiveScheduleTab('shooting')}
+                aria-pressed={activeScheduleTab === 'shooting'}
                 className={`flex-1 py-1.5 rounded text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
                   activeScheduleTab === 'shooting'
                     ? 'bg-white text-slate-900 shadow-xs'
@@ -920,10 +1022,12 @@ export default function CalendarPage() {
                 /* TAB 1: SOCIAL POST FORM */
                 <form onSubmit={handlePostSubmit} className="space-y-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    <label htmlFor="schedule-post-caption" className="block text-xs font-semibold text-slate-700 mb-1">
                       Konten / Caption Utama
                     </label>
                     <textarea
+                      id="schedule-post-caption"
+                      data-modal-initial-focus
                       rows={3}
                       value={postCaption}
                       onChange={(e) => setPostCaption(e.target.value)}
@@ -935,10 +1039,11 @@ export default function CalendarPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label htmlFor="schedule-post-platform" className="block text-xs font-semibold text-slate-700 mb-1">
                         Saluran Target
                       </label>
                       <select
+                        id="schedule-post-platform"
                         value={postPlatform}
                         onChange={(e) => setPostPlatform(e.target.value)}
                         className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
@@ -952,10 +1057,11 @@ export default function CalendarPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label htmlFor="schedule-post-time" className="block text-xs font-semibold text-slate-700 mb-1">
                         Waktu Tayang (Otomatis)
                       </label>
                       <input
+                        id="schedule-post-time"
                         type="datetime-local"
                         value={postDate}
                         onChange={(e) => setPostDate(e.target.value)}
@@ -988,11 +1094,12 @@ export default function CalendarPage() {
                   {/* Kanban Idea Selector */}
                   {kanbanIdeas.length > 0 && (
                     <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
-                      <label className="block text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                      <label htmlFor="schedule-kanban-idea" className="block text-[11px] font-bold text-slate-800 flex items-center gap-1">
                         <Sparkles className="w-3 h-3 text-slate-700" />
                         <span>Ambil dari Ide Kanban (Opsional)</span>
                       </label>
                       <select
+                        id="schedule-kanban-idea"
                         value={selectedIdeaId}
                         onChange={(e) => {
                           const id = e.target.value;
@@ -1023,10 +1130,12 @@ export default function CalendarPage() {
                   )}
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    <label htmlFor="shooting-title" className="block text-xs font-semibold text-slate-700 mb-1">
                       Judul Sesi Shooting <span className="text-rose-500">*</span>
                     </label>
                     <input
+                      id="shooting-title"
+                      data-modal-initial-focus
                       type="text"
                       value={shootTitle}
                       onChange={(e) => setShootTitle(e.target.value)}
@@ -1038,11 +1147,12 @@ export default function CalendarPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                      <label htmlFor="shooting-location" className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5 text-slate-500" />
                         <span>Lokasi Shooting</span>
                       </label>
                       <input
+                        id="shooting-location"
                         type="text"
                         value={shootLocation}
                         onChange={(e) => setShootLocation(e.target.value)}
@@ -1052,10 +1162,11 @@ export default function CalendarPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label htmlFor="shooting-status" className="block text-xs font-semibold text-slate-700 mb-1">
                         Status Produksi
                       </label>
                       <select
+                        id="shooting-status"
                         value={shootStatus}
                         onChange={(e) => setShootStatus(e.target.value)}
                         className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
@@ -1070,10 +1181,11 @@ export default function CalendarPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label htmlFor="shooting-start" className="block text-xs font-semibold text-slate-700 mb-1">
                         Mulai Jam
                       </label>
                       <input
+                        id="shooting-start"
                         type="datetime-local"
                         value={shootScheduledAt}
                         onChange={(e) => setShootScheduledAt(e.target.value)}
@@ -1082,10 +1194,11 @@ export default function CalendarPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label htmlFor="shooting-end" className="block text-xs font-semibold text-slate-700 mb-1">
                         Selesai Estimasi
                       </label>
                       <input
+                        id="shooting-end"
                         type="datetime-local"
                         value={shootEndAt}
                         onChange={(e) => setShootEndAt(e.target.value)}
@@ -1095,10 +1208,11 @@ export default function CalendarPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    <label htmlFor="shooting-description" className="block text-xs font-semibold text-slate-700 mb-1">
                       Brief & Catatan Produksi
                     </label>
                     <textarea
+                      id="shooting-description"
                       rows={3}
                       value={shootDescription}
                       onChange={(e) => setShootDescription(e.target.value)}
@@ -1116,6 +1230,7 @@ export default function CalendarPage() {
                     <div className="flex gap-1.5">
                       <input
                         type="text"
+                        aria-label="Nama kru atau talent"
                         value={newCrewName}
                         onChange={(e) => setNewCrewName(e.target.value)}
                         placeholder="Nama kru / talent..."
@@ -1123,6 +1238,7 @@ export default function CalendarPage() {
                       />
                       <input
                         type="text"
+                        aria-label="Peran kru atau talent"
                         value={newCrewRole}
                         onChange={(e) => setNewCrewRole(e.target.value)}
                         placeholder="Peran"
@@ -1151,6 +1267,7 @@ export default function CalendarPage() {
                           <button
                             type="button"
                             onClick={() => setCrewList((prev) => prev.filter((_, idx) => idx !== i))}
+                            aria-label={`Hapus ${c.name || 'anggota kru'} dari daftar`}
                             className="text-slate-400 hover:text-rose-500 ml-0.5"
                           >
                             ×
@@ -1188,7 +1305,13 @@ export default function CalendarPage() {
       {/* ========================================================================= */}
       {selectedEvent && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto">
+          <div
+            ref={eventDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="calendar-event-detail-title"
+            className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto"
+          >
             {/* Header */}
             <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1200,7 +1323,7 @@ export default function CalendarPage() {
                   )}
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-900">
+                  <h3 id="calendar-event-detail-title" className="text-xs font-bold text-slate-900">
                     {selectedEvent.type === 'shooting'
                       ? 'Detail Sesi Shooting'
                       : 'Detail Postingan Terjadwal'}
@@ -1213,7 +1336,9 @@ export default function CalendarPage() {
 
               <button
                 type="button"
+                data-modal-initial-focus
                 onClick={() => setSelectedEvent(null)}
+                aria-label="Tutup detail agenda"
                 className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
               >
                 <X className="w-4 h-4" />
@@ -1283,6 +1408,7 @@ export default function CalendarPage() {
                           key={idx}
                           type="button"
                           onClick={() => handleToggleEquipment(idx)}
+                          aria-pressed={eq.checked}
                           className="w-full flex items-center gap-2 p-1 rounded hover:bg-white text-left transition text-[11px] select-none"
                         >
                           {eq.checked ? (

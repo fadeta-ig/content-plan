@@ -5,9 +5,10 @@ import {
   Plus,
   GripVertical,
   Sparkles,
-  Loader2,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { KanbanColumn, KanbanCard } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
@@ -43,6 +44,7 @@ export default function KanbanPage() {
   ]);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedPreview, setSelectedPreview] = useState<{
     card: KanbanCard;
@@ -53,13 +55,19 @@ export default function KanbanPage() {
   const dragDataRef = useRef<{ cardId: string; sourceColumnId: string } | null>(null);
 
   const loadKanban = async () => {
+    setIsLoading(true);
+    setLoadError('');
     try {
       const data = await api.getKanbanIdeas();
       if (data.columns && data.columns.length > 0) {
         setColumns(data.columns);
       }
-    } catch {
-      // Keep default columns
+    } catch (error) {
+      setLoadError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Papan Kanban tidak dapat dimuat. Periksa koneksi lalu coba lagi.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -85,9 +93,9 @@ export default function KanbanPage() {
 
   const handleUpdateIdeaCard = (updatedCard: KanbanCard, newColumnId?: string) => {
     setColumns((prev) => {
-      let foundCard = updatedCard;
-      let fromColId = selectedPreview?.columnId || updatedCard.status || 'unassigned';
-      let toColId = newColumnId || fromColId;
+      const foundCard = updatedCard;
+      const fromColId = selectedPreview?.columnId || updatedCard.status || 'unassigned';
+      const toColId = newColumnId || fromColId;
 
       if (newColumnId && newColumnId !== fromColId) {
         // Move card to new column
@@ -127,10 +135,10 @@ export default function KanbanPage() {
     try {
       await api.updateIdeaStatus(cardId, nextStatus);
       toast.success('Status Diperbarui', `Ide dipindahkan ke "${COLUMN_LABELS[nextStatus]}".`);
-    } catch (e: any) {
+    } catch (error: unknown) {
       // Rollback
       moveCardOptimistic(cardId, nextStatus, currentStatus);
-      toast.error('Gagal Memperbarui Status', e.message || 'Terjadi kesalahan.');
+      toast.error('Gagal Memperbarui Status', getErrorMessage(error, 'Terjadi kesalahan.'));
     }
   };
 
@@ -176,8 +184,8 @@ export default function KanbanPage() {
             setSelectedPreview(null);
           }
           toast.warning('Ide Dihapus', `Ide "${title}" berhasil dihapus.`);
-        } catch (e: any) {
-          toast.error('Gagal Menghapus', e.message || 'Gagal menghapus ide.');
+        } catch (error: unknown) {
+          toast.error('Gagal Menghapus', getErrorMessage(error, 'Gagal menghapus ide.'));
         }
       },
     });
@@ -236,10 +244,10 @@ export default function KanbanPage() {
         'Ide Dipindahkan',
         `Ide berhasil dipindahkan ke "${COLUMN_LABELS[targetColumnId] || targetColumnId}".`
       );
-    } catch (e: any) {
+    } catch (error: unknown) {
       // Rollback
       moveCardOptimistic(cardId, targetColumnId, sourceColumnId);
-      toast.error('Gagal Memindahkan', e.message || 'Terjadi kesalahan.');
+      toast.error('Gagal Memindahkan', getErrorMessage(error, 'Terjadi kesalahan.'));
     }
 
     dragDataRef.current = null;
@@ -278,6 +286,21 @@ export default function KanbanPage() {
           <span>Klik kartu untuk melihat naskah brief &amp; ringkasan konsep</span>
         </div>
       </div>
+
+      {loadError && (
+        <div
+          className="ui-card border-rose-200 bg-rose-50 text-rose-800 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          role="alert"
+        >
+          <span className="text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span><strong>Data Kanban gagal dimuat.</strong> {loadError}</span>
+          </span>
+          <button type="button" className="ui-btn ui-btn-secondary shrink-0" onClick={() => void loadKanban()}>
+            <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
+          </button>
+        </div>
+      )}
 
       {/* Kanban Board Columns Grid / Skeleton Loader */}
       {isLoading ? (

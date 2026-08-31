@@ -21,9 +21,10 @@ import json
 import uuid
 
 from django.core.exceptions import ValidationError
+from django.db import connection
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from ninja import File, Form, Query, Router
+from ninja import File, Form, Query, Router, Status
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
@@ -123,7 +124,9 @@ def upload(
     except ValueError as exc:
         raise HttpError(422, str(exc)) from exc
     if disposition == "replay":
-        return replay_status, replay_body
+        if replay_status is None or replay_body is None:
+            raise RuntimeError("Completed idempotency replay is missing its stored response.")
+        return Status(replay_status, replay_body)
     if disposition == "in_flight":
         raise HttpError(
             409,
@@ -183,7 +186,7 @@ def upload(
         status_code=status_code,
         body=body.model_dump(mode="json"),
     )
-    return status_code, body
+    return Status(status_code, body)
 
 
 def _flatten_validation_error(exc: ValidationError) -> str:
@@ -285,8 +288,10 @@ def list_media(
         qs = qs.filter(folder_id=folder_id)
     if is_starred is not None:
         qs = qs.filter(is_starred=is_starred)
-    for tag in _parse_tags_csv(tags):
-        qs = qs.filter(tags__contains=[tag])
+    parsed_tags = _parse_tags_csv(tags)
+    if connection.features.supports_json_field_contains:
+        for tag in parsed_tags:
+            qs = qs.filter(tags__contains=[tag])
     if created_after:
         qs = qs.filter(created_at__gte=created_after)
     if created_before:
@@ -302,8 +307,14 @@ def list_media(
     # stable ``order_by(..., "id")`` tiebreak.
     cursor_payload = _decode_cursor(cursor)
     offset = int(cursor_payload.get("o", 0)) if cursor_payload else 0
-    items_qs = qs[offset : offset + limit + 1]
-    rows = list(items_qs)
+    if parsed_tags and not connection.features.supports_json_field_contains:
+        # SQLite's JSON1 backend has no ``contains`` lookup. Keep local/test
+        # behavior correct and portable; production MySQL/PostgreSQL stays on
+        # the indexed database path above.
+        matching_rows = [asset for asset in qs if all(tag in (asset.tags or []) for tag in parsed_tags)]
+        rows = matching_rows[offset : offset + limit + 1]
+    else:
+        rows = list(qs[offset : offset + limit + 1])
     has_more = len(rows) > limit
     rows = rows[:limit]
 

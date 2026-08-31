@@ -1,6 +1,4 @@
-from datetime import datetime, timezone
-
-UTC = timezone.utc
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, call
 
 from providers.exceptions import APIError

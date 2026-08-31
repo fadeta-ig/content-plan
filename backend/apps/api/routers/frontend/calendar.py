@@ -4,75 +4,89 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from django.db import transaction
+from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from django.http import HttpRequest
+from django.utils import timezone
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from apps.calendar.models import PostingSlot, ShootingSession
-from apps.composer.models import Post, Idea
-from .helpers import frontend_auth, get_current_user_and_workspace
+from apps.composer.models import Idea, Post
 
+from .helpers import frontend_auth, get_current_user_and_workspace, require_workspace_permission
 
 router = Router(tags=["frontend-calendar"], auth=frontend_auth)
 
 
 class ShootingSessionCreateSchema(Schema):
     title: str
-    description: Optional[str] = ""
-    location: Optional[str] = ""
+    description: str | None = ""
+    location: str | None = ""
     scheduled_at: str
-    end_at: Optional[str] = None
-    status: Optional[str] = "planned"
-    crew_members: Optional[List[Dict[str, Any]]] = []
-    equipment_checklist: Optional[List[Dict[str, Any]]] = []
-    related_idea_id: Optional[str] = None
+    end_at: str | None = None
+    status: str | None = "planned"
+    crew_members: list[dict[str, Any]] | None = None
+    equipment_checklist: list[dict[str, Any]] | None = None
+    related_idea_id: str | None = None
 
 
 class ShootingSessionUpdateSchema(Schema):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    location: Optional[str] = None
-    scheduled_at: Optional[str] = None
-    end_at: Optional[str] = None
-    status: Optional[str] = None
-    crew_members: Optional[List[Dict[str, Any]]] = None
-    equipment_checklist: Optional[List[Dict[str, Any]]] = None
-    related_idea_id: Optional[str] = None
+    title: str | None = None
+    description: str | None = None
+    location: str | None = None
+    scheduled_at: str | None = None
+    end_at: str | None = None
+    status: str | None = None
+    crew_members: list[dict[str, Any]] | None = None
+    equipment_checklist: list[dict[str, Any]] | None = None
+    related_idea_id: str | None = None
 
 
 class RescheduleSchema(Schema):
     scheduled_at: str
 
 
+def _parse_datetime(value: str, workspace, field_label: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if timezone.is_naive(parsed):
+            parsed = timezone.make_aware(parsed, ZoneInfo(workspace.effective_timezone or "UTC"))
+        return parsed
+    except (TypeError, ValueError, ZoneInfoNotFoundError) as exc:
+        raise HttpError(422, f"Format {field_label} atau zona waktu tidak valid.") from exc
+
+
+def _require_session_edit(request: HttpRequest, session: ShootingSession, user) -> None:
+    membership = require_workspace_permission(request, "create_posts")
+    if session.created_by_id != user.id and not membership.effective_permissions.get("edit_others_posts", False):
+        raise HttpError(403, "Anda hanya dapat mengubah sesi shooting yang Anda buat sendiri.")
+
+
 @router.get("/dashboard/calendar", summary="Get Scheduled Calendar Posts & Shooting Sessions")
-def get_calendar_posts(request: HttpRequest, start_date: Optional[str] = None, end_date: Optional[str] = None):
+def get_calendar_posts(request: HttpRequest, start_date: str | None = None, end_date: str | None = None):
     user, workspace = get_current_user_and_workspace(request)
+
+    start_dt = _parse_datetime(start_date, workspace, "tanggal mulai") if start_date else None
+    end_dt = _parse_datetime(end_date, workspace, "tanggal selesai") if end_date else None
+    if start_dt and end_dt and end_dt < start_dt:
+        raise HttpError(422, "Tanggal selesai tidak boleh lebih awal dari tanggal mulai.")
 
     # 1. Fetch Scheduled Social Posts
     posts_qs = Post.objects.filter(workspace=workspace, scheduled_at__isnull=False)
 
-    if start_date:
-        try:
-            st = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            posts_qs = posts_qs.filter(scheduled_at__gte=st)
-        except Exception:
-            pass
+    if start_dt:
+        posts_qs = posts_qs.filter(scheduled_at__gte=start_dt)
 
-    if end_date:
-        try:
-            et = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-            posts_qs = posts_qs.filter(scheduled_at__lte=et)
-        except Exception:
-            pass
+    if end_dt:
+        posts_qs = posts_qs.filter(scheduled_at__lte=end_dt)
 
-    posts = (
-        posts_qs.prefetch_related("platform_posts__social_account", "media_attachments__media_asset")
-        .order_by("scheduled_at")
+    posts = posts_qs.prefetch_related("platform_posts__social_account", "media_attachments__media_asset").order_by(
+        "scheduled_at"
     )
 
-    events = []
+    events: list[dict[str, Any]] = []
     for p in posts:
         p_posts = list(p.platform_posts.all())
         platforms = list({pp.social_account.platform for pp in p_posts if pp.social_account})
@@ -85,60 +99,58 @@ def get_calendar_posts(request: HttpRequest, start_date: Optional[str] = None, e
                 thumb = m.media_asset.thumbnail.url if m.media_asset.thumbnail else m.media_asset.file.url
                 if not thumbnail:
                     thumbnail = thumb
-                media_list.append({
-                    "id": str(m.media_asset.id),
-                    "file_url": m.media_asset.file.url,
-                    "thumbnail_url": thumb,
-                    "file_type": m.media_asset.media_type,
-                    "title": m.media_asset.title or m.media_asset.filename,
-                })
+                media_list.append(
+                    {
+                        "id": str(m.media_asset.id),
+                        "file_url": m.media_asset.file.url,
+                        "thumbnail_url": thumb,
+                        "file_type": m.media_asset.media_type,
+                        "title": m.media_asset.title or m.media_asset.filename,
+                    }
+                )
 
-        events.append({
-            "id": str(p.id),
-            "type": "post",
-            "title": p.title or (p.caption[:120] if p.caption else "Postingan Terjadwal"),
-            "caption": p.caption,
-            "first_comment": p.first_comment or "",
-            "start": p.scheduled_at.isoformat() if p.scheduled_at else "",
-            "platforms": platforms or ["social"],
-            "status": primary_status,
-            "thumbnail_url": thumbnail,
-            "media": media_list,
-        })
+        events.append(
+            {
+                "id": str(p.id),
+                "type": "post",
+                "title": p.title or (p.caption[:120] if p.caption else "Postingan Terjadwal"),
+                "caption": p.caption,
+                "first_comment": p.first_comment or "",
+                "start": p.scheduled_at.isoformat() if p.scheduled_at else "",
+                "platforms": platforms or ["social"],
+                "status": primary_status,
+                "thumbnail_url": thumbnail,
+                "media": media_list,
+            }
+        )
 
     # 2. Fetch Shooting Sessions
     shoots_qs = ShootingSession.objects.filter(workspace=workspace).select_related("related_idea")
-    if start_date:
-        try:
-            st = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            shoots_qs = shoots_qs.filter(scheduled_at__gte=st)
-        except Exception:
-            pass
-    if end_date:
-        try:
-            et = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-            shoots_qs = shoots_qs.filter(scheduled_at__lte=et)
-        except Exception:
-            pass
+    if start_dt:
+        shoots_qs = shoots_qs.filter(scheduled_at__gte=start_dt)
+    if end_dt:
+        shoots_qs = shoots_qs.filter(scheduled_at__lte=end_dt)
 
     for s in shoots_qs.order_by("scheduled_at"):
-        events.append({
-            "id": str(s.id),
-            "type": "shooting",
-            "title": s.title,
-            "description": s.description,
-            "location": s.location,
-            "start": s.scheduled_at.isoformat() if s.scheduled_at else "",
-            "end": s.end_at.isoformat() if s.end_at else None,
-            "status": s.status,
-            "crew_members": s.crew_members or [],
-            "equipment_checklist": s.equipment_checklist or [],
-            "related_idea_id": str(s.related_idea_id) if s.related_idea_id else None,
-            "related_idea_title": s.related_idea.title if s.related_idea else None,
-            "platforms": ["shooting"],
-            "thumbnail_url": "",
-            "media": [],
-        })
+        events.append(
+            {
+                "id": str(s.id),
+                "type": "shooting",
+                "title": s.title,
+                "description": s.description,
+                "location": s.location,
+                "start": s.scheduled_at.isoformat() if s.scheduled_at else "",
+                "end": s.end_at.isoformat() if s.end_at else None,
+                "status": s.status,
+                "crew_members": s.crew_members or [],
+                "equipment_checklist": s.equipment_checklist or [],
+                "related_idea_id": str(s.related_idea_id) if s.related_idea_id else None,
+                "related_idea_title": s.related_idea.title if s.related_idea else None,
+                "platforms": ["shooting"],
+                "thumbnail_url": "",
+                "media": [],
+            }
+        )
 
     # 3. Fetch Time Slots
     slots = [
@@ -159,30 +171,29 @@ def get_calendar_posts(request: HttpRequest, start_date: Optional[str] = None, e
 # Shooting Sessions CRUD Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/dashboard/shooting-sessions", summary="List Shooting Sessions")
 def list_shooting_sessions(
     request: HttpRequest,
-    status: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ):
     user, workspace = get_current_user_and_workspace(request)
     qs = ShootingSession.objects.filter(workspace=workspace).select_related("related_idea")
 
     if status and status != "all":
+        if status not in {choice for choice, _ in ShootingSession.Status.choices}:
+            raise HttpError(422, "Status sesi shooting tidak valid.")
         qs = qs.filter(status=status)
-    if start_date:
-        try:
-            st = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            qs = qs.filter(scheduled_at__gte=st)
-        except Exception:
-            pass
-    if end_date:
-        try:
-            et = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-            qs = qs.filter(scheduled_at__lte=et)
-        except Exception:
-            pass
+    start_dt = _parse_datetime(start_date, workspace, "tanggal mulai") if start_date else None
+    end_dt = _parse_datetime(end_date, workspace, "tanggal selesai") if end_date else None
+    if start_dt and end_dt and end_dt < start_dt:
+        raise HttpError(422, "Tanggal selesai tidak boleh lebih awal dari tanggal mulai.")
+    if start_dt:
+        qs = qs.filter(scheduled_at__gte=start_dt)
+    if end_dt:
+        qs = qs.filter(scheduled_at__lte=end_dt)
 
     sessions = [
         {
@@ -207,29 +218,32 @@ def list_shooting_sessions(
 @router.post("/dashboard/shooting-sessions", summary="Create Shooting Session")
 def create_shooting_session(request: HttpRequest, payload: ShootingSessionCreateSchema):
     user, workspace = get_current_user_and_workspace(request)
+    require_workspace_permission(request, "create_posts")
 
     if not payload.title.strip():
         raise HttpError(422, "Judul sesi shooting wajib diisi.")
 
-    try:
-        start_dt = datetime.fromisoformat(payload.scheduled_at.replace("Z", "+00:00"))
-    except Exception:
-        raise HttpError(422, "Format waktu shooting tidak valid.")
+    start_dt = _parse_datetime(payload.scheduled_at, workspace, "waktu mulai shooting")
 
     end_dt = None
     if payload.end_at:
-        try:
-            end_dt = datetime.fromisoformat(payload.end_at.replace("Z", "+00:00"))
-        except Exception:
-            pass
+        end_dt = _parse_datetime(payload.end_at, workspace, "waktu selesai shooting")
+        if end_dt <= start_dt:
+            raise HttpError(422, "Waktu selesai harus setelah waktu mulai shooting.")
+
+    selected_status = payload.status or ShootingSession.Status.PLANNED
+    if selected_status not in {choice for choice, _ in ShootingSession.Status.choices}:
+        raise HttpError(422, "Status sesi shooting tidak valid.")
 
     related_idea = None
     if payload.related_idea_id:
         try:
             i_uuid = uuid.UUID(str(payload.related_idea_id))
             related_idea = Idea.objects.filter(id=i_uuid, workspace=workspace).first()
-        except Exception:
-            pass
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise HttpError(422, "ID ide terkait tidak valid.") from exc
+        if related_idea is None:
+            raise HttpError(404, "Ide terkait tidak ditemukan di workspace ini.")
 
     session = ShootingSession.objects.create(
         workspace=workspace,
@@ -238,7 +252,7 @@ def create_shooting_session(request: HttpRequest, payload: ShootingSessionCreate
         location=(payload.location or "").strip(),
         scheduled_at=start_dt,
         end_at=end_dt,
-        status=payload.status or ShootingSession.Status.PLANNED,
+        status=selected_status,
         crew_members=payload.crew_members or [],
         equipment_checklist=payload.equipment_checklist or [],
         related_idea=related_idea,
@@ -265,14 +279,9 @@ def create_shooting_session(request: HttpRequest, payload: ShootingSessionCreate
 
 
 @router.get("/dashboard/shooting-sessions/{session_id}", summary="Get Shooting Session Detail")
-def get_shooting_session_detail(request: HttpRequest, session_id: str):
+def get_shooting_session_detail(request: HttpRequest, session_id: uuid.UUID):
     user, workspace = get_current_user_and_workspace(request)
-    try:
-        s_uuid = uuid.UUID(str(session_id))
-    except (ValueError, TypeError):
-        raise HttpError(400, "ID sesi shooting tidak valid.")
-
-    session = ShootingSession.objects.filter(id=s_uuid, workspace=workspace).select_related("related_idea").first()
+    session = ShootingSession.objects.filter(id=session_id, workspace=workspace).select_related("related_idea").first()
     if not session:
         raise HttpError(404, "Sesi shooting tidak ditemukan.")
 
@@ -295,34 +304,29 @@ def get_shooting_session_detail(request: HttpRequest, session_id: str):
 
 
 @router.patch("/dashboard/shooting-sessions/{session_id}", summary="Update Shooting Session")
-def update_shooting_session(request: HttpRequest, session_id: str, payload: ShootingSessionUpdateSchema):
+def update_shooting_session(request: HttpRequest, session_id: uuid.UUID, payload: ShootingSessionUpdateSchema):
     user, workspace = get_current_user_and_workspace(request)
-    try:
-        s_uuid = uuid.UUID(str(session_id))
-    except (ValueError, TypeError):
-        raise HttpError(400, "ID sesi shooting tidak valid.")
-
-    session = ShootingSession.objects.filter(id=s_uuid, workspace=workspace).select_related("related_idea").first()
+    session = ShootingSession.objects.filter(id=session_id, workspace=workspace).select_related("related_idea").first()
     if not session:
         raise HttpError(404, "Sesi shooting tidak ditemukan.")
+    _require_session_edit(request, session, user)
 
     if payload.title is not None:
-        session.title = payload.title.strip()
+        title = payload.title.strip()
+        if not title:
+            raise HttpError(422, "Judul sesi shooting wajib diisi.")
+        session.title = title
     if payload.description is not None:
         session.description = payload.description.strip()
     if payload.location is not None:
         session.location = payload.location.strip()
     if payload.scheduled_at is not None:
-        try:
-            session.scheduled_at = datetime.fromisoformat(payload.scheduled_at.replace("Z", "+00:00"))
-        except Exception:
-            raise HttpError(422, "Format waktu mulai tidak valid.")
+        session.scheduled_at = _parse_datetime(payload.scheduled_at, workspace, "waktu mulai")
     if payload.end_at is not None:
-        try:
-            session.end_at = datetime.fromisoformat(payload.end_at.replace("Z", "+00:00")) if payload.end_at else None
-        except Exception:
-            session.end_at = None
+        session.end_at = _parse_datetime(payload.end_at, workspace, "waktu selesai") if payload.end_at else None
     if payload.status is not None:
+        if payload.status not in {choice for choice, _ in ShootingSession.Status.choices}:
+            raise HttpError(422, "Status sesi shooting tidak valid.")
         session.status = payload.status
     if payload.crew_members is not None:
         session.crew_members = payload.crew_members
@@ -333,10 +337,15 @@ def update_shooting_session(request: HttpRequest, session_id: str, payload: Shoo
             try:
                 i_uuid = uuid.UUID(str(payload.related_idea_id))
                 session.related_idea = Idea.objects.filter(id=i_uuid, workspace=workspace).first()
-            except Exception:
-                session.related_idea = None
+            except (TypeError, ValueError, AttributeError) as exc:
+                raise HttpError(422, "ID ide terkait tidak valid.") from exc
+            if session.related_idea is None:
+                raise HttpError(404, "Ide terkait tidak ditemukan di workspace ini.")
         else:
             session.related_idea = None
+
+    if session.end_at and session.end_at <= session.scheduled_at:
+        raise HttpError(422, "Waktu selesai harus setelah waktu mulai shooting.")
 
     session.save()
 
@@ -360,22 +369,15 @@ def update_shooting_session(request: HttpRequest, session_id: str, payload: Shoo
 
 
 @router.patch("/dashboard/shooting-sessions/{session_id}/reschedule", summary="Reschedule Shooting Session")
-def reschedule_shooting_session(request: HttpRequest, session_id: str, payload: RescheduleSchema):
+def reschedule_shooting_session(request: HttpRequest, session_id: uuid.UUID, payload: RescheduleSchema):
     """Move a shooting session to a new date/time (Calendar Drag-and-Drop)."""
     user, workspace = get_current_user_and_workspace(request)
-    try:
-        s_uuid = uuid.UUID(str(session_id))
-    except (ValueError, TypeError):
-        raise HttpError(400, "ID sesi shooting tidak valid.")
-
-    session = ShootingSession.objects.filter(id=s_uuid, workspace=workspace).first()
+    session = ShootingSession.objects.filter(id=session_id, workspace=workspace).first()
     if not session:
         raise HttpError(404, "Sesi shooting tidak ditemukan.")
+    _require_session_edit(request, session, user)
 
-    try:
-        new_dt = datetime.fromisoformat(payload.scheduled_at.replace("Z", "+00:00"))
-    except Exception:
-        raise HttpError(422, "Format tanggal tidak valid.")
+    new_dt = _parse_datetime(payload.scheduled_at, workspace, "tanggal shooting")
 
     session.scheduled_at = new_dt
     session.save(update_fields=["scheduled_at"])
@@ -389,16 +391,12 @@ def reschedule_shooting_session(request: HttpRequest, session_id: str, payload: 
 
 
 @router.delete("/dashboard/shooting-sessions/{session_id}", summary="Delete Shooting Session")
-def delete_shooting_session(request: HttpRequest, session_id: str):
+def delete_shooting_session(request: HttpRequest, session_id: uuid.UUID):
     user, workspace = get_current_user_and_workspace(request)
-    try:
-        s_uuid = uuid.UUID(str(session_id))
-    except (ValueError, TypeError):
-        raise HttpError(400, "ID sesi shooting tidak valid.")
-
-    session = ShootingSession.objects.filter(id=s_uuid, workspace=workspace).first()
+    session = ShootingSession.objects.filter(id=session_id, workspace=workspace).first()
     if not session:
         raise HttpError(404, "Sesi shooting tidak ditemukan.")
+    _require_session_edit(request, session, user)
 
     session.delete()
     return {"success": True, "message": "Sesi shooting berhasil dihapus."}

@@ -1,9 +1,7 @@
 """Tests for TikTokProvider analytics methods (video.list)."""
 
 import hashlib
-from datetime import datetime, timezone
-
-UTC = timezone.utc
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
 

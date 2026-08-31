@@ -1,19 +1,17 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Share2,
   Plus,
   CheckCircle2,
   RefreshCw,
   Trash2,
-  ShieldCheck,
   ExternalLink,
   Lock,
   X,
-  ArrowRight,
-  Info,
   Key,
+  AlertCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { SocialAccount } from '@/lib/types';
@@ -33,44 +31,92 @@ const PLATFORM_LIST = [
   { id: 'google_business', name: 'Google Business Profile', description: 'Post Update & Lokasi Usaha' },
 ];
 
+type PlatformOption = (typeof PLATFORM_LIST)[number];
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 export default function AccountsPage() {
   const toast = useToast();
   const { confirm } = useConfirm();
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPlatformToConnect, setSelectedPlatformToConnect] = useState<any | null>(null);
+  const [selectedPlatformToConnect, setSelectedPlatformToConnect] = useState<PlatformOption | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [accountNameInput, setAccountNameInput] = useState('');
-  const [accountHandleInput, setAccountHandleInput] = useState('');
-  const [connectMode, setConnectMode] = useState<'oauth' | 'simulate'>('simulate');
+  const connectionDialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const connectingRef = useRef(false);
 
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  useEffect(() => {
+    connectingRef.current = connecting;
+  }, [connecting]);
 
-  const loadAccounts = async () => {
+  const loadAccounts = useCallback(async () => {
+    setLoading(true);
     try {
-      const [accountsData, meData] = await Promise.all([
-        api.getSocialAccounts().catch(() => ({ accounts: [] })),
-        api.getMe().catch(() => null),
-      ]);
-      if (accountsData?.accounts) {
-        setAccounts(accountsData.accounts);
-      }
-      if (meData?.active_workspace?.id) {
-        setWorkspaceId(meData.active_workspace.id);
-      }
+      const accountsData = await api.getSocialAccounts();
+      setAccounts(accountsData.accounts);
     } catch (err) {
       setAccounts([]);
+      toast.error(
+        'Gagal Memuat Saluran',
+        errorMessage(err, 'Data akun media sosial tidak dapat dimuat. Periksa koneksi lalu coba lagi.')
+      );
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
-    loadAccounts();
-  }, []);
+    void loadAccounts();
+  }, [loadAccounts]);
 
-  const handleRefreshToken = (accountName: string) => {
-    toast.success('Token Berhasil Diperbarui', `Token otentikasi untuk ${accountName} berhasil diverifikasi dan diperpanjang.`);
+  useEffect(() => {
+    if (!selectedPlatformToConnect) return;
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusTimer = window.setTimeout(() => {
+      connectionDialogRef.current?.querySelector<HTMLElement>('[data-modal-initial-focus]')?.focus();
+    }, 0);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !connectingRef.current) {
+        setSelectedPlatformToConnect(null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = connectionDialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [selectedPlatformToConnect]);
+
+  const handleReconnect = (account: SocialAccount) => {
+    const platform = PLATFORM_LIST.find((item) => item.id === account.platform);
+    if (!platform) {
+      toast.error('Platform Tidak Didukung', 'Platform akun ini belum memiliki alur OAuth yang tersedia.');
+      return;
+    }
+    setSelectedPlatformToConnect(platform);
   };
 
   const handleDisconnect = (id: string, name: string) => {
@@ -81,12 +127,20 @@ export default function AccountsPage() {
       type: 'danger',
       onConfirm: async () => {
         try {
-          await api.disconnectAccount(id);
-        } catch (e) {
-          // Local fallback
+          const result = await api.disconnectAccount(id);
+          setAccounts((prev) => prev.filter((a) => a.id !== id));
+          if (result.revocation_confirmed) {
+            toast.warning('Saluran Diputuskan', result.message);
+          } else {
+            toast.warning('Perlu Tindakan di Platform', result.message);
+          }
+        } catch (error) {
+          toast.error(
+            'Gagal Memutuskan Saluran',
+            errorMessage(error, `Koneksi akun ${name} belum berubah. Silakan coba kembali.`)
+          );
+          throw error;
         }
-        setAccounts((prev) => prev.filter((a) => a.id !== id));
-        toast.warning('Saluran Diputuskan', `Akun ${name} telah dilepas dari workspace.`);
       },
     });
   };
@@ -99,67 +153,18 @@ export default function AccountsPage() {
         toast.info('Mengarahkan ke OAuth Resmi...', `Membuka halaman login resmi ${selectedPlatformToConnect?.name || platformId}`);
         window.location.href = res.auth_url;
       } else {
-        toast.warning(
-          'Kredensial OAuth Belum Diisi',
-          res.message || 'App ID belum diset di .env backend. Mengalihkan ke mode Tambah Akun Manual.'
+        toast.error(
+          'OAuth Belum Tersedia',
+          res.message || `Kredensial OAuth ${selectedPlatformToConnect?.name || platformId} belum dikonfigurasi oleh administrator.`
         );
-        setConnectMode('simulate');
       }
-    } catch (e) {
-      toast.warning(
-        'Kredensial OAuth Belum Diisi',
-        'App ID & Secret belum diset di .env server backend. Anda dapat menggunakan mode Tambah Akun Manual secara langsung.'
+    } catch (error) {
+      toast.error(
+        'Gagal Memulai OAuth',
+        errorMessage(error, 'Permintaan otorisasi tidak dapat dimulai. Periksa koneksi lalu coba lagi.')
       );
-      setConnectMode('simulate');
     } finally {
       setConnecting(false);
-    }
-  };
-
-  const handleConnectSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPlatformToConnect) return;
-
-    if (connectMode === 'oauth') {
-      await handleRealOAuthRedirect(selectedPlatformToConnect.id);
-      return;
-    }
-
-    // Manual / direct add mode persisted to real database
-    setConnecting(true);
-    try {
-      const res = await api.createManualAccount({
-        platform: selectedPlatformToConnect.id,
-        account_name: accountNameInput.trim() || `PT Wijaya Inovasi Gemilang (${selectedPlatformToConnect.name})`,
-        account_handle: accountHandleInput.trim() || `@wijaya.${selectedPlatformToConnect.id}`,
-      });
-
-      if (res.account) {
-        setAccounts((prev) => [res.account, ...prev.filter((a) => a.id !== res.account.id)]);
-      }
-      toast.success(
-        'Saluran Terhubung!',
-        `${selectedPlatformToConnect.name} berhasil disimpan ke database dan aktif di workspace.`
-      );
-    } catch (err: any) {
-      const localAcc: SocialAccount = {
-        id: `sa-${Date.now()}`,
-        platform: selectedPlatformToConnect.id,
-        account_name: accountNameInput.trim() || `PT Wijaya Inovasi Gemilang (${selectedPlatformToConnect.name})`,
-        account_handle: accountHandleInput.trim() || `@wijaya.${selectedPlatformToConnect.id}`,
-        avatar_url: '',
-        follower_count: 0,
-        connection_status: 'connected',
-        is_token_expiring_soon: false,
-        connected_at: 'Hari Ini',
-      };
-      setAccounts((prev) => [localAcc, ...prev]);
-      toast.success('Saluran Terhubung!', `${selectedPlatformToConnect.name} berhasil ditambahkan.`);
-    } finally {
-      setConnecting(false);
-      setSelectedPlatformToConnect(null);
-      setAccountHandleInput('');
-      setAccountNameInput('');
     }
   };
 
@@ -183,7 +188,11 @@ export default function AccountsPage() {
       </div>
 
       {/* Connected Accounts Cards Grid */}
-      {accounts.length > 0 ? (
+      {loading ? (
+        <div className="ui-card p-6 text-center text-xs text-slate-500" role="status">
+          Memuat saluran media sosial...
+        </div>
+      ) : accounts.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {accounts.map((acc) => (
             <div key={acc.id} className="ui-card flex flex-col justify-between space-y-3">
@@ -198,9 +207,27 @@ export default function AccountsPage() {
                   </div>
                 </div>
 
-                <span className="ui-badge bg-emerald-50 border-emerald-200 text-emerald-700">
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>Aktif</span>
+                <span
+                  className={`ui-badge ${
+                    acc.connection_status === 'connected'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                      : acc.connection_status === 'token_expiring'
+                        ? 'bg-amber-50 border-amber-200 text-amber-700'
+                        : 'bg-rose-50 border-rose-200 text-rose-700'
+                  }`}
+                >
+                  {acc.connection_status === 'connected' ? (
+                    <CheckCircle2 className="w-3 h-3" />
+                  ) : (
+                    <AlertCircle className="w-3 h-3" />
+                  )}
+                  <span>
+                    {acc.connection_status === 'connected'
+                      ? 'Aktif'
+                      : acc.connection_status === 'token_expiring'
+                        ? 'Perlu Otorisasi'
+                        : 'Bermasalah'}
+                  </span>
                 </span>
               </div>
 
@@ -214,17 +241,18 @@ export default function AccountsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleRefreshToken(acc.account_name)}
+                    onClick={() => handleReconnect(acc)}
                     className="text-slate-700 font-medium hover:underline flex items-center gap-1"
+                    aria-label={`Otorisasi ulang akun ${acc.account_name}`}
                   >
                     <RefreshCw className="w-3 h-3" />
-                    <span>Refresh</span>
+                    <span>Otorisasi Ulang</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDisconnect(acc.id, acc.account_name)}
                     className="text-slate-400 hover:text-rose-600 p-0.5"
-                    title="Putuskan Koneksi"
+                    aria-label={`Putuskan koneksi akun ${acc.account_name}`}
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -274,14 +302,13 @@ export default function AccountsPage() {
                   type="button"
                   onClick={() => {
                     setSelectedPlatformToConnect(p);
-                    setAccountNameInput(`PT Wijaya Inovasi Gemilang (${p.name})`);
-                    setAccountHandleInput(`@wijaya.${p.id}`);
-                    setConnectMode('simulate');
                   }}
                   className="ui-btn ui-btn-secondary text-[11px] py-1 px-2 shrink-0"
+                  disabled={isAlreadyConnected}
+                  aria-label={`${isAlreadyConnected ? 'Sudah terhubung ke' : 'Hubungkan'} ${p.name}`}
                 >
-                  <Plus className="w-3 h-3" />
-                  <span>Hubungkan</span>
+                  {isAlreadyConnected ? <CheckCircle2 className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                  <span>{isAlreadyConnected ? 'Terhubung' : 'Hubungkan'}</span>
                 </button>
               </div>
             );
@@ -292,146 +319,75 @@ export default function AccountsPage() {
       {/* Interactive Connection Modal Dialog */}
       {selectedPlatformToConnect && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto">
+          <div
+            ref={connectionDialogRef}
+            className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="connect-account-title"
+            aria-describedby="connect-account-description"
+          >
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
                 <SocialIcon platform={selectedPlatformToConnect.id} size={18} />
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                <h3 id="connect-account-title" className="text-sm font-bold text-slate-900 uppercase tracking-wide">
                   Hubungkan {selectedPlatformToConnect.name}
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedPlatformToConnect(null)}
                 className="text-slate-400 hover:text-slate-600"
+                aria-label="Tutup dialog koneksi akun"
+                disabled={connecting}
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Mode Switcher Tabs */}
-            <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-md text-xs font-semibold gap-1">
-              <button
-                type="button"
-                onClick={() => setConnectMode('oauth')}
-                className={`py-1.5 px-2 rounded flex items-center justify-center gap-1.5 transition ${
-                  connectMode === 'oauth' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Login Resmi (OAuth 2.0)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setConnectMode('simulate')}
-                className={`py-1.5 px-2 rounded flex items-center justify-center gap-1.5 transition ${
-                  connectMode === 'simulate' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Tambah Akun Manual</span>
-              </button>
-            </div>
-
-            {/* Option 1: Official OAuth 2.0 Redirect Mode */}
-            {connectMode === 'oauth' && (
-              <div className="space-y-3">
-                <div className="text-xs text-slate-600 space-y-2 bg-slate-50 p-3 rounded border border-slate-200">
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-900">
-                    <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Alur Login Resmi OAuth 2.0</span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Sistem akan mengalihkan (*redirect*) browser Anda ke halaman login resmi <strong>{selectedPlatformToConnect.name}</strong> untuk memberikan izin penerbitan otomatis dan analitik.
-                  </p>
+            <div className="space-y-3">
+              <div className="text-xs text-slate-600 space-y-2 bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                  <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Otorisasi Resmi OAuth 2.0</span>
                 </div>
-
-                <div className="p-2.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[11px] space-y-1">
-                  <div className="flex items-center gap-1 font-semibold">
-                    <Key className="w-3 h-3" />
-                    <span>Catatan Setup Developer App:</span>
-                  </div>
-                  <p>
-                    Pastikan App ID & App Secret untuk {selectedPlatformToConnect.name} sudah dimasukkan di file <code>.env</code> server Anda agar Meta/Google mengenali izin aplikasi ini.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPlatformToConnect(null)}
-                    className="ui-btn ui-btn-secondary"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRealOAuthRedirect(selectedPlatformToConnect.id)}
-                    className="ui-btn ui-btn-primary"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Lanjutkan Login ke {selectedPlatformToConnect.name}</span>
-                  </button>
-                </div>
+                <p id="connect-account-description" className="text-[11px] text-slate-600 leading-relaxed">
+                  Anda akan diarahkan ke halaman resmi <strong>{selectedPlatformToConnect.name}</strong>. Kata sandi platform tidak pernah dimasukkan atau disimpan oleh Content Plan Studio.
+                </p>
               </div>
-            )}
 
-            {/* Option 2: Direct Add Mode (Persisted to DB) */}
-            {connectMode === 'simulate' && (
-              <form onSubmit={handleConnectSubmit} className="space-y-3">
-                <div className="text-xs text-slate-600 space-y-1 bg-slate-50 p-3 rounded border border-slate-200">
-                  <span className="font-semibold text-slate-900 block">Tambah Akun Langsung ke Database</span>
-                  <p className="text-[11px] text-slate-600">
-                    Daftarkan akun media sosial Anda ke dalam ruang kerja Content Plan Studio agar siap dipilih saat membuat konten di Composer.
-                  </p>
+              <div className="p-2.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[11px] space-y-1">
+                <div className="flex items-center gap-1 font-semibold">
+                  <Key className="w-3 h-3" />
+                  <span>Untuk administrator</span>
                 </div>
+                <p>
+                  Jika otorisasi belum tersedia, administrator perlu mengonfigurasi App ID, App Secret, dan callback URL {selectedPlatformToConnect.name} di server.
+                </p>
+              </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">
-                    Nama Akun / Brand:
-                  </label>
-                  <input
-                    type="text"
-                    value={accountNameInput}
-                    onChange={(e) => setAccountNameInput(e.target.value)}
-                    placeholder={`PT Wijaya Inovasi Gemilang (${selectedPlatformToConnect.name})`}
-                    className="ui-input"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">
-                    Handle Akun (Username):
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={accountHandleInput}
-                    onChange={(e) => setAccountHandleInput(e.target.value)}
-                    placeholder={`@wijaya.${selectedPlatformToConnect.id}`}
-                    className="ui-input"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPlatformToConnect(null)}
-                    className="ui-btn ui-btn-secondary"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={connecting}
-                    className="ui-btn ui-btn-primary"
-                  >
-                    <ArrowRight className="w-3.5 h-3.5" />
-                    <span>{connecting ? 'Menyimpan...' : 'Simpan & Hubungkan'}</span>
-                  </button>
-                </div>
-              </form>
-            )}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  data-modal-initial-focus
+                  onClick={() => setSelectedPlatformToConnect(null)}
+                  className="ui-btn ui-btn-secondary"
+                  disabled={connecting}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRealOAuthRedirect(selectedPlatformToConnect.id)}
+                  className="ui-btn ui-btn-primary"
+                  disabled={connecting}
+                >
+                  {connecting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                  <span>{connecting ? 'Menyiapkan OAuth...' : `Lanjutkan ke ${selectedPlatformToConnect.name}`}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

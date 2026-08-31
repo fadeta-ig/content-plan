@@ -28,6 +28,11 @@ ignore = [
 # doesn't apply.
 "apps/api/routers/media.py" = ["B008"]
 "apps/api/routers/analytics.py" = ["B008"]
+"apps/api/routers/frontend/media.py" = ["B008"]
+# Standalone Django scripts must call django.setup() before importing models.
+"audit_system.py" = ["E402"]
+"clean_production_data.py" = ["E402"]
+"seed_data.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["apps", "config"]

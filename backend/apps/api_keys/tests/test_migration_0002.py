@@ -93,7 +93,7 @@ class TestBackfillViewAnalyticsMigration:
         key = _make_key(
             workspace,
             name="backfilled",
-            permissions=sorted(set(PERMISSION_KEYS)),
+            permissions=sorted(migration_module._PRE_ANALYTICS_FULL_SCOPE | {"view_analytics"}),
         )
 
         migration_module.remove_view_analytics_from_backfilled_keys(_StubApps(), None)

@@ -13,12 +13,11 @@ import {
   ChevronRight,
   X,
   Inbox,
-  Calendar,
-  FileText,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { NotificationItem, NotificationCategory } from '@/lib/types';
 import SocialIcon from '@/components/ui/SocialIcon';
+import { useToast } from '@/components/ui/Toast';
 
 type FilterTab = 'all' | NotificationCategory;
 
@@ -70,22 +69,30 @@ function formatRelativeTime(isoTimestamp: string): string {
 
 export default function NotificationDropdown() {
   const router = useRouter();
+  const toast = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const loadNotifications = useCallback(async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const data = await api.getNotifications(activeFilter !== 'all' ? activeFilter : undefined);
       setNotifications(data.notifications);
       setUnreadCount(data.unread_count);
-    } catch {
+    } catch (error) {
       setNotifications([]);
       setUnreadCount(0);
+      setLoadError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Notifikasi tidak dapat dimuat.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -110,9 +117,16 @@ export default function NotificationDropdown() {
         setIsOpen(false);
       }
     }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setIsOpen(false);
+    }
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('keydown', handleEscape);
+      };
     }
   }, [isOpen]);
 
@@ -121,16 +135,32 @@ export default function NotificationDropdown() {
       await api.markNotificationsRead({ mark_all: true });
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       setUnreadCount(0);
-    } catch {
-      // Silent fail
+    } catch (error) {
+      toast.error(
+        'Gagal Menandai Notifikasi',
+        error instanceof Error && error.message ? error.message : 'Status notifikasi belum berubah.'
+      );
     }
   };
 
-  const handleNotificationClick = (item: NotificationItem) => {
-    if (item.action_url) {
-      router.push(item.action_url);
-      setIsOpen(false);
+  const handleNotificationClick = async (item: NotificationItem) => {
+    if (!item.action_url || !item.action_url.startsWith('/')) {
+      toast.error('Tujuan Tidak Valid', 'Notifikasi ini tidak memiliki tautan internal yang aman.');
+      return;
     }
+    if (!item.is_read) {
+      try {
+        await api.markNotificationsRead({ notification_ids: [item.id] });
+        setUnreadCount((count) => Math.max(0, count - 1));
+      } catch (error) {
+        toast.error(
+          'Status Belum Diperbarui',
+          error instanceof Error && error.message ? error.message : 'Notifikasi belum dapat ditandai sebagai dibaca.'
+        );
+      }
+    }
+    router.push(item.action_url);
+    setIsOpen(false);
   };
 
   const filteredNotifications =
@@ -149,8 +179,11 @@ export default function NotificationDropdown() {
     <div className="relative" ref={dropdownRef}>
       {/* Bell Trigger */}
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Notifikasi"
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         className={`relative p-1.5 rounded-md border transition ${
           isOpen
             ? 'border-slate-400 bg-slate-100 text-slate-900'
@@ -167,7 +200,11 @@ export default function NotificationDropdown() {
 
       {/* Dropdown Popover */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-96 bg-white border border-slate-200 rounded-lg shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+        <div
+          className="absolute right-0 top-full mt-2 w-[min(24rem,calc(100vw-1rem))] bg-white border border-slate-200 rounded-lg shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+          role="dialog"
+          aria-label="Pusat notifikasi"
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/60">
             <div className="flex items-center gap-2">
@@ -184,6 +221,7 @@ export default function NotificationDropdown() {
             <div className="flex items-center gap-1.5">
               {unreadCount > 0 && (
                 <button
+                  type="button"
                   onClick={handleMarkAllRead}
                   className="text-[10px] font-medium text-slate-500 hover:text-slate-800 transition px-1.5 py-0.5 rounded hover:bg-slate-100"
                 >
@@ -191,8 +229,10 @@ export default function NotificationDropdown() {
                 </button>
               )}
               <button
+                type="button"
                 onClick={() => setIsOpen(false)}
                 className="p-0.5 rounded text-slate-400 hover:text-slate-600 transition"
+                aria-label="Tutup notifikasi"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -203,6 +243,7 @@ export default function NotificationDropdown() {
           <div className="flex items-center gap-1 px-3 py-2 border-b border-slate-100 bg-white">
             {tabs.map((tab) => (
               <button
+                type="button"
                 key={tab.key}
                 onClick={() => setActiveFilter(tab.key)}
                 className={`px-2.5 py-1 rounded text-[11px] font-medium transition ${
@@ -222,6 +263,13 @@ export default function NotificationDropdown() {
               <div className="py-10 text-center text-xs text-slate-400">
                 <Clock className="w-5 h-5 text-slate-300 mx-auto mb-2 animate-pulse" />
                 <span>Memuat notifikasi...</span>
+              </div>
+            ) : loadError ? (
+              <div className="py-8 px-4 text-center space-y-2" role="alert">
+                <AlertTriangle className="w-6 h-6 text-rose-500 mx-auto" />
+                <p className="text-xs font-semibold text-slate-700">Notifikasi gagal dimuat</p>
+                <p className="text-[10px] text-slate-500">{loadError}</p>
+                <button type="button" className="ui-btn ui-btn-secondary" onClick={loadNotifications}>Coba Lagi</button>
               </div>
             ) : filteredNotifications.length > 0 ? (
               filteredNotifications.map((item) => {

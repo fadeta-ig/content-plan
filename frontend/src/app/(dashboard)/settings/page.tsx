@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Settings as SettingsIcon,
   Building2,
   Shield,
   Database,
@@ -11,31 +10,28 @@ import {
   Users,
   UserPlus,
   Trash2,
-  Lock,
   ExternalLink,
   X,
-  Mail,
   ShieldCheck,
   KeyRound,
-  UserCheck,
-  UserX,
   Copy,
   CheckCheck,
   Eye,
   EyeOff,
   RefreshCw,
-  AlertCircle,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { ApiError, api, getErrorMessage } from '@/lib/api';
 import { TeamMember } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 
-function generateRandomPassword(length = 10): string {
+function generateRandomPassword(length = 16): string {
   const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';
   let pass = '';
-  for (let i = 0; i < length; i++) {
-    pass += chars.charAt(Math.floor(Math.random() * chars.length));
+  const randomValues = new Uint32Array(length);
+  crypto.getRandomValues(randomValues);
+  for (const value of randomValues) {
+    pass += chars.charAt(value % chars.length);
   }
   return pass;
 }
@@ -47,11 +43,13 @@ export default function SettingsPage() {
   const [orgName, setOrgName] = useState('PT Wijaya Inovasi Gemilang');
   const [workspaceName, setWorkspaceName] = useState('Content Plan Studio');
   const [timezone, setTimezone] = useState('Asia/Jakarta');
-  const [workflowMode, setWorkflowMode] = useState('internal');
+  const [workflowMode, setWorkflowMode] = useState('none');
 
   // Real Database Members
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [canManageGlobalAccounts, setCanManageGlobalAccounts] = useState(false);
 
   // Invite Modal State
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -90,47 +88,89 @@ export default function SettingsPage() {
   });
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [isSubmittingReset, setIsSubmittingReset] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const submittingInviteRef = useRef(false);
+  const submittingResetRef = useRef(false);
 
-  const loadData = async () => {
+  useEffect(() => {
+    submittingInviteRef.current = isSubmittingInvite;
+    submittingResetRef.current = isSubmittingReset;
+  }, [isSubmittingInvite, isSubmittingReset]);
+
+  useEffect(() => {
+    const hasOpenModal = isInviteModalOpen || resetModal.isOpen || credentialModal.isOpen;
+    if (!hasOpenModal) return;
+
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusTimer = window.setTimeout(() => {
+      modalRef.current?.querySelector<HTMLElement>('[data-modal-initial-focus]')?.focus();
+    }, 0);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !submittingInviteRef.current && !submittingResetRef.current) {
+        setIsInviteModalOpen(false);
+        setResetModal({ isOpen: false, member: null, newPassword: '' });
+        setCredentialModal((previous) => ({ ...previous, isOpen: false }));
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = modalRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [credentialModal.isOpen, isInviteModalOpen, resetModal.isOpen]);
+
+  const loadData = useCallback(async () => {
+    setLoadingMembers(true);
+    setLoadError('');
     try {
-      const [memData, settData] = await Promise.all([
-        api.getMembers().catch(() => ({ members: [] })),
-        api.getSettings().catch(() => null),
-      ]);
+      const [memData, settData] = await Promise.all([api.getMembers(), api.getSettings()]);
 
-      if (memData.members && memData.members.length > 0) {
-        setMembers(memData.members);
-      } else {
-        setMembers([
-          {
-            id: 'm-admin',
-            name: 'Admin PT Wijaya Inovasi Gemilang',
-            email: 'admin@wijayagroup.id',
-            role: 'owner',
-            joined_at: 'Hari Ini',
-            is_active: true,
-            status: 'active',
-            is_owner: true,
-          },
-        ]);
-      }
+      setMembers(memData.members || []);
+      setCanManageGlobalAccounts(Boolean(memData.capabilities?.can_manage_global_accounts));
 
-      if (settData) {
-        if (settData.organization_name) setOrgName(settData.organization_name);
-        if (settData.workspace_name) setWorkspaceName(settData.workspace_name);
-        if (settData.timezone) setTimezone(settData.timezone);
-        if (settData.approval_workflow_mode) setWorkflowMode(settData.approval_workflow_mode);
-      }
-    } catch {
-      // Fallback
+      if (settData.organization_name) setOrgName(settData.organization_name);
+      if (settData.workspace_name) setWorkspaceName(settData.workspace_name);
+      if (settData.timezone) setTimezone(settData.timezone);
+      if (settData.approval_workflow_mode) setWorkflowMode(settData.approval_workflow_mode);
+    } catch (error) {
+      setMembers([]);
+      const message = getErrorMessage(error, 'Data anggota dan konfigurasi tidak dapat dimuat.');
+      setLoadError(message);
+      toast.error(
+        'Gagal Memuat Pengaturan',
+        message,
+      );
     } finally {
       setLoadingMembers(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    void loadData();
+  }, [loadData]);
 
   const handleSaveGeneral = (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,18 +191,25 @@ export default function SettingsPage() {
             'Pengaturan Tersimpan',
             'Konfigurasi organisasi PT Wijaya Inovasi Gemilang berhasil disimpan ke database.'
           );
-        } catch {
-          toast.success('Pengaturan Tersimpan', 'Konfigurasi organisasi berhasil diperbarui.');
+        } catch (error) {
+          toast.error(
+            'Pengaturan Tidak Tersimpan',
+            error instanceof Error ? error.message : 'Server menolak perubahan. Periksa isian dan hak akses Anda.',
+          );
         }
       },
     });
   };
 
-  const handleChangeMemberRole = async (id: string, newRole: any) => {
+  const handleChangeMemberRole = async (id: string, newRole: TeamMember['role']) => {
     try {
       await api.updateMemberRole({ member_id: id, role: newRole });
-    } catch {
-      // Local update
+    } catch (error) {
+      toast.error(
+        'Role Tidak Diubah',
+        error instanceof Error ? error.message : 'Server menolak perubahan role.',
+      );
+      return;
     }
 
     setMembers((prev) =>
@@ -174,7 +221,6 @@ export default function SettingsPage() {
 
   const handleToggleStatus = (member: TeamMember) => {
     const nextStatus = !member.is_active;
-    const actionText = nextStatus ? 'mengaktifkan' : 'menonaktifkan';
     const statusLabel = nextStatus ? 'Aktif' : 'Nonaktif';
 
     confirm({
@@ -198,8 +244,8 @@ export default function SettingsPage() {
             'Status Diperbarui',
             `Akun ${member.name} berhasil diubah menjadi ${statusLabel}.`
           );
-        } catch (err: any) {
-          toast.error('Gagal Mengubah Status', err.message || 'Terjadi kesalahan pada server.');
+        } catch (error: unknown) {
+          toast.error('Gagal Mengubah Status', getErrorMessage(error, 'Terjadi kesalahan pada server.'));
         }
       },
     });
@@ -235,8 +281,8 @@ export default function SettingsPage() {
       });
       setCopiedCredential(false);
       toast.success('Kata Sandi Diperbarui', `Kata sandi untuk ${updatedMember.email} berhasil direset.`);
-    } catch (err: any) {
-      toast.error('Gagal Mereset Kata Sandi', err.message || 'Terjadi kesalahan.');
+    } catch (error: unknown) {
+      toast.error('Gagal Mereset Kata Sandi', getErrorMessage(error, 'Terjadi kesalahan.'));
     } finally {
       setIsSubmittingReset(false);
     }
@@ -251,11 +297,14 @@ export default function SettingsPage() {
       onConfirm: async () => {
         try {
           await api.removeMember(id);
-        } catch {
-          // Local removal
+          setMembers((prev) => prev.filter((m) => m.id !== id));
+          toast.warning('Anggota Dihapus', `${name} telah dilepas dari tim workspace.`);
+        } catch (error) {
+          toast.error(
+            'Anggota Tidak Dihapus',
+            error instanceof Error ? error.message : 'Server menolak penghapusan anggota.',
+          );
         }
-        setMembers((prev) => prev.filter((m) => m.id !== id));
-        toast.warning('Anggota Dihapus', `${name} telah dilepas dari tim workspace.`);
       },
     });
   };
@@ -268,12 +317,24 @@ export default function SettingsPage() {
     setIsSubmittingInvite(true);
 
     try {
-      const res = await api.inviteMember({
-        name: inviteName.trim(),
-        email: inviteEmail.trim(),
-        role: inviteRole,
-        password: chosenPassword,
-      });
+      let res;
+      try {
+        res = await api.inviteMember({
+          name: inviteName.trim(),
+          email: inviteEmail.trim(),
+          role: inviteRole,
+          password: chosenPassword,
+        });
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 409) throw error;
+        // Existing accounts keep their current password. Retry only the safe
+        // membership assignment without sending or changing credentials.
+        res = await api.inviteMember({
+          name: inviteName.trim(),
+          email: inviteEmail.trim(),
+          role: inviteRole,
+        });
+      }
 
       if (res.member) {
         setMembers((prev) => [...prev, res.member]);
@@ -292,28 +353,29 @@ export default function SettingsPage() {
       }
 
       setIsInviteModalOpen(false);
-      const assignedPassword = res.temporary_password || chosenPassword;
-
-      // Open Credential Modal so admin can copy credentials
-      setCredentialModal({
-        isOpen: true,
-        name: inviteName.trim(),
-        email: inviteEmail.trim(),
-        password: assignedPassword,
-        role: inviteRole,
-      });
-      setCopiedCredential(false);
+      if (res.temporary_password) {
+        setCredentialModal({
+          isOpen: true,
+          name: inviteName.trim(),
+          email: inviteEmail.trim(),
+          password: res.temporary_password,
+          role: inviteRole,
+        });
+        setCopiedCredential(false);
+      }
 
       toast.success(
         'Anggota Berhasil Didaftarkan',
-        `${inviteName} telah ditambahkan ke sistem dengan akses ${inviteRole.toUpperCase()}.`
+        res.temporary_password
+          ? `${inviteName} telah ditambahkan. Salin kredensial sementara yang ditampilkan.`
+          : `${inviteName} sudah memiliki akun; akses ${inviteRole.toUpperCase()} ditambahkan tanpa mengubah kata sandinya.`
       );
 
       setInviteName('');
       setInviteEmail('');
       setInvitePassword('');
-    } catch (err: any) {
-      toast.error('Gagal Menambahkan Anggota', err.message || 'Terjadi kesalahan pada server.');
+    } catch (error: unknown) {
+      toast.error('Gagal Menambahkan Anggota', getErrorMessage(error, 'Terjadi kesalahan pada server.'));
     } finally {
       setIsSubmittingInvite(false);
     }
@@ -372,6 +434,14 @@ export default function SettingsPage() {
       {/* Tab 1: TEAM MEMBERS & ROLES */}
       {activeTab === 'team' && (
         <div className="space-y-4">
+          {loadError && (
+            <div className="ui-card border-rose-200 bg-rose-50 text-rose-800 p-3 flex items-center justify-between gap-3" role="alert">
+              <span className="text-xs">{loadError}</span>
+              <button type="button" className="ui-btn ui-btn-secondary shrink-0" onClick={() => void loadData()}>
+                Coba Lagi
+              </button>
+            </div>
+          )}
           {/* Action Toolbar */}
           <div className="ui-card flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5">
             <div>
@@ -411,7 +481,11 @@ export default function SettingsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {members.map((m) => {
+                  {loadingMembers ? (
+                    <tr><td colSpan={5} className="py-10 px-4 text-center text-xs text-slate-500">Memuat anggota workspace...</td></tr>
+                  ) : members.length === 0 ? (
+                    <tr><td colSpan={5} className="py-10 px-4 text-center text-xs text-slate-500">Belum ada anggota yang dapat ditampilkan.</td></tr>
+                  ) : members.map((m) => {
                     const isOwner = m.role === 'owner' || m.is_owner;
                     const isActive = m.is_active !== false && m.status !== 'inactive';
 
@@ -446,7 +520,7 @@ export default function SettingsPage() {
                             <select
                               value={m.role}
                               disabled={!isActive}
-                              onChange={(e) => handleChangeMemberRole(m.id, e.target.value)}
+                              onChange={(e) => handleChangeMemberRole(m.id, e.target.value as TeamMember['role'])}
                               className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-medium text-slate-800 focus:outline-none focus:border-slate-400 disabled:opacity-60 disabled:cursor-not-allowed"
                             >
                               <option value="manager">Manager (Head of Creative)</option>
@@ -473,7 +547,7 @@ export default function SettingsPage() {
                               </span>
                             )}
 
-                            {!isOwner && (
+                            {!isOwner && canManageGlobalAccounts && (
                               <button
                                 type="button"
                                 onClick={() => handleToggleStatus(m)}
@@ -499,15 +573,17 @@ export default function SettingsPage() {
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             {/* Reset Password Button */}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenResetModal(m)}
-                              className="px-2 py-1 rounded bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-[11px] font-medium flex items-center gap-1 transition"
-                              title="Reset Kata Sandi Akun"
-                            >
-                              <KeyRound className="w-3 h-3 text-slate-500" />
-                              <span>Reset Sandi</span>
-                            </button>
+                            {canManageGlobalAccounts && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenResetModal(m)}
+                                className="px-2 py-1 rounded bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-[11px] font-medium flex items-center gap-1 transition"
+                                title="Reset Kata Sandi Akun"
+                              >
+                                <KeyRound className="w-3 h-3 text-slate-500" />
+                                <span>Reset Sandi</span>
+                              </button>
+                            )}
 
                             {/* Delete Button */}
                             {!isOwner && (
@@ -540,9 +616,7 @@ export default function SettingsPage() {
                 </h3>
               </div>
               <a
-                href="http://localhost:8000/admin/members/customrole/"
-                target="_blank"
-                rel="noreferrer"
+                href="/admin/members/customrole/"
                 className="text-xs text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1"
               >
                 <span>Kelola Custom Role (Admin Portal)</span>
@@ -590,10 +664,11 @@ export default function SettingsPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                <label htmlFor="organization-name" className="text-xs font-semibold text-slate-700 block mb-1">
                   Nama Organisasi / Brand:
                 </label>
                 <input
+                  id="organization-name"
                   type="text"
                   value={orgName}
                   onChange={(e) => setOrgName(e.target.value)}
@@ -602,10 +677,11 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                <label htmlFor="workspace-name" className="text-xs font-semibold text-slate-700 block mb-1">
                   Nama Workspace:
                 </label>
                 <input
+                  id="workspace-name"
                   type="text"
                   value={workspaceName}
                   onChange={(e) => setWorkspaceName(e.target.value)}
@@ -626,10 +702,11 @@ export default function SettingsPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                <label htmlFor="workspace-timezone" className="text-xs font-semibold text-slate-700 block mb-1">
                   Zona Waktu (Timezone):
                 </label>
                 <select
+                  id="workspace-timezone"
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
                   className="ui-input"
@@ -641,17 +718,19 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                <label htmlFor="approval-workflow" className="text-xs font-semibold text-slate-700 block mb-1">
                   Alur Persetujuan Konten:
                 </label>
                 <select
+                  id="approval-workflow"
                   value={workflowMode}
                   onChange={(e) => setWorkflowMode(e.target.value)}
                   className="ui-input"
                 >
                   <option value="none">Langsung Terbit (Tanpa Review)</option>
-                  <option value="internal">Persetujuan Internal Tim</option>
-                  <option value="internal_and_client">Internal + Klien (Magic Link)</option>
+                  <option value="optional">Review Opsional</option>
+                  <option value="required_internal">Persetujuan Internal Tim</option>
+                  <option value="required_internal_and_client">Internal + Klien (Magic Link)</option>
                 </select>
               </div>
             </div>
@@ -695,16 +774,24 @@ export default function SettingsPage() {
       {/* MODAL 1: Invite / Add Member Modal */}
       {isInviteModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto">
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invite-member-title"
+            className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto"
+          >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
                 <UserPlus className="w-5 h-5 text-slate-700" />
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                <h3 id="invite-member-title" className="text-sm font-bold text-slate-900 uppercase tracking-wide">
                   Tambah Anggota Tim Kreatif
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsInviteModalOpen(false)}
+                aria-label="Tutup formulir tambah anggota"
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition"
               >
                 <X className="w-4 h-4" />
@@ -713,11 +800,13 @@ export default function SettingsPage() {
 
             <form onSubmit={handleInviteSubmit} className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                <label htmlFor="invite-member-name" className="text-xs font-semibold text-slate-700 block mb-1">
                   Nama Lengkap Anggota:
                 </label>
                 <input
                   type="text"
+                  id="invite-member-name"
+                  data-modal-initial-focus
                   required
                   value={inviteName}
                   onChange={(e) => setInviteName(e.target.value)}
@@ -727,11 +816,12 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                <label htmlFor="invite-member-email" className="text-xs font-semibold text-slate-700 block mb-1">
                   Alamat Email (Digunakan untuk Login):
                 </label>
                 <input
                   type="email"
+                  id="invite-member-email"
                   required
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
@@ -741,12 +831,17 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                <label htmlFor="invite-member-role" className="text-xs font-semibold text-slate-700 block mb-1">
                   Peran / Hak Akses:
                 </label>
                 <select
+                  id="invite-member-role"
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as any)}
+                  onChange={(e) =>
+                    setInviteRole(
+                      e.target.value as 'manager' | 'editor' | 'contributor' | 'client' | 'viewer'
+                    )
+                  }
                   className="ui-input py-2 text-xs"
                 >
                   <option value="manager">Manager (Head of Creative / Lead)</option>
@@ -759,12 +854,12 @@ export default function SettingsPage() {
 
               <div className="space-y-2 pt-1 border-t border-slate-100">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-700">
+                  <label htmlFor="invite-member-password" className="text-xs font-semibold text-slate-700">
                     Kata Sandi Awal:
                   </label>
                   <button
                     type="button"
-                    onClick={() => setInvitePassword(generateRandomPassword(10))}
+                    onClick={() => setInvitePassword(generateRandomPassword())}
                     className="text-[11px] text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
                   >
                     <RefreshCw className="w-3 h-3" />
@@ -774,16 +869,18 @@ export default function SettingsPage() {
                 <div className="relative">
                   <input
                     type={showInvitePassword ? 'text' : 'password'}
+                    id="invite-member-password"
                     required
-                    minLength={6}
+                    minLength={8}
                     value={invitePassword}
                     onChange={(e) => setInvitePassword(e.target.value)}
-                    placeholder="Masukkan kata sandi awal (min. 6 karakter)"
+                    placeholder="Masukkan kata sandi awal (min. 8 karakter)"
                     className="w-full bg-white border border-slate-200 rounded px-3 py-2 pr-10 text-xs font-mono text-slate-800 focus:outline-none focus:border-slate-400"
                   />
                   <button
                     type="button"
                     onClick={() => setShowInvitePassword(!showInvitePassword)}
+                    aria-label={showInvitePassword ? 'Sembunyikan kata sandi awal' : 'Tampilkan kata sandi awal'}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
                     {showInvitePassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -815,16 +912,24 @@ export default function SettingsPage() {
       {/* MODAL 2: Reset Password Modal */}
       {resetModal.isOpen && resetModal.member && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto">
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-member-password-title"
+            className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto"
+          >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
                 <KeyRound className="w-5 h-5 text-slate-700" />
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                <h3 id="reset-member-password-title" className="text-sm font-bold text-slate-900 uppercase tracking-wide">
                   Reset Kata Sandi Anggota
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setResetModal({ isOpen: false, member: null, newPassword: '' })}
+                aria-label="Tutup formulir reset kata sandi"
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition"
               >
                 <X className="w-4 h-4" />
@@ -840,7 +945,7 @@ export default function SettingsPage() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-700">
+                  <label htmlFor="reset-member-password" className="text-xs font-semibold text-slate-700">
                     Kata Sandi Baru:
                   </label>
                   <button
@@ -848,7 +953,7 @@ export default function SettingsPage() {
                     onClick={() =>
                       setResetModal((prev) => ({
                         ...prev,
-                        newPassword: generateRandomPassword(10),
+                        newPassword: generateRandomPassword(),
                       }))
                     }
                     className="text-[11px] text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
@@ -861,8 +966,10 @@ export default function SettingsPage() {
                 <div className="relative">
                   <input
                     type={showResetPassword ? 'text' : 'password'}
+                    id="reset-member-password"
+                    data-modal-initial-focus
                     required
-                    minLength={6}
+                    minLength={8}
                     value={resetModal.newPassword}
                     onChange={(e) =>
                       setResetModal((prev) => ({
@@ -870,12 +977,13 @@ export default function SettingsPage() {
                         newPassword: e.target.value,
                       }))
                     }
-                    placeholder="Masukkan kata sandi baru (min. 6 karakter)"
+                    placeholder="Masukkan kata sandi baru (min. 8 karakter)"
                     className="w-full bg-white border border-slate-200 rounded px-3 py-2 pr-10 text-xs font-mono text-slate-800 focus:outline-none focus:border-slate-400"
                   />
                   <button
                     type="button"
                     onClick={() => setShowResetPassword(!showResetPassword)}
+                    aria-label={showResetPassword ? 'Sembunyikan kata sandi baru' : 'Tampilkan kata sandi baru'}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
                     {showResetPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -907,16 +1015,25 @@ export default function SettingsPage() {
       {/* MODAL 3: Credential Card Modal (Shown after invite or reset) */}
       {credentialModal.isOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto">
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="member-credentials-title"
+            className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 my-auto"
+          >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
                 <Check className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                <h3 id="member-credentials-title" className="text-sm font-bold text-slate-900 uppercase tracking-wide">
                   Kredensial Login Anggota Tim
                 </h3>
               </div>
               <button
+                type="button"
+                data-modal-initial-focus
                 onClick={() => setCredentialModal((prev) => ({ ...prev, isOpen: false }))}
+                aria-label="Tutup informasi kredensial"
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition"
               >
                 <X className="w-4 h-4" />

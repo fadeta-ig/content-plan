@@ -8,19 +8,19 @@ from __future__ import annotations
 
 from ninja import Router
 
-from .helpers import frontend_auth
-from .auth import router as auth_router
-from .overview import router as overview_router
-from .posts import router as posts_router
-from .calendar import router as calendar_router
-from .kanban import router as kanban_router
 from .accounts import router as accounts_router
-from .inbox import router as inbox_router
 from .analytics import router as analytics_router
+from .auth import router as auth_router
+from .calendar import router as calendar_router
+from .helpers import frontend_auth
+from .inbox import router as inbox_router
+from .kanban import router as kanban_router
 from .media import router as media_router
 from .members import router as members_router
-from .settings import router as settings_router
 from .notifications import router as notifications_router
+from .overview import router as overview_router
+from .posts import router as posts_router
+from .settings import router as settings_router
 
 # Main router for frontend
 router = Router(tags=["frontend"], auth=frontend_auth)

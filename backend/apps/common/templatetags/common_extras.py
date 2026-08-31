@@ -2,7 +2,6 @@ import json
 
 from django import template
 from django.utils.html import escape
-from django.utils.safestring import mark_safe
 
 register = template.Library()
 
@@ -22,5 +21,5 @@ def json_attr(value):
     matching the prior `|default:'[]'|safe` idiom.
     """
     if value is None or value == "":
-        return mark_safe(escape("[]"))
-    return mark_safe(escape(json.dumps(value, ensure_ascii=False, default=str)))
+        return escape("[]")
+    return escape(json.dumps(value, ensure_ascii=False, default=str))

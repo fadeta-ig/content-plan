@@ -28,6 +28,7 @@ export interface TeamMember {
   is_active: boolean;
   status: 'active' | 'inactive' | 'invited';
   is_owner?: boolean;
+  is_self?: boolean;
 }
 
 export interface SocialAccount {
@@ -50,6 +51,11 @@ export interface MediaItem {
   file_size?: number;
   title?: string;
   created_at?: string;
+}
+
+export interface MediaFolder {
+  id: string;
+  name: string;
 }
 
 export interface PlatformPostTarget {
@@ -178,7 +184,7 @@ export interface InboxMessage {
   sender_avatar_url: string;
   content: string;
   message_type: 'comment' | 'mention' | 'direct_message' | 'dm' | 'review';
-  status: 'unread' | 'read' | 'in_progress' | 'resolved';
+  status: 'unread' | 'open' | 'resolved' | 'archived';
   sentiment: 'positive' | 'neutral' | 'negative';
   platform: string;
   account_name: string;

@@ -1,49 +1,43 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import {
-  BarChart3,
-  TrendingUp,
-  Users,
-  Eye,
-  MousePointer,
-  Calendar,
-  Share2,
-} from 'lucide-react';
-import { api } from '@/lib/api';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AlertCircle, BarChart3, RefreshCw, Share2 } from 'lucide-react';
+import { api, getErrorMessage } from '@/lib/api';
 import { AnalyticsData } from '@/lib/types';
+
+function formatTrendDate(value: string): string {
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+}
+
+function formatDelta(value: number): string {
+  return `${value > 0 ? '+' : ''}${value}%`;
+}
 
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [period, setPeriod] = useState<number>(30);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const loadAnalytics = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      setAnalytics(await api.getAnalytics(period));
+    } catch (error: unknown) {
+      setAnalytics(null);
+      setLoadError(getErrorMessage(error, 'Data analitik tidak dapat dimuat. Periksa koneksi lalu coba lagi.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [period]);
 
   useEffect(() => {
-    async function loadAnalytics() {
-      setLoading(true);
-      try {
-        const data = await api.getAnalytics(period);
-        setAnalytics(data);
-      } catch (err) {
-        setAnalytics({
-          period_days: period,
-          kpis: {
-            total_followers: 0,
-            follower_growth_percent: 0.0,
-            total_impressions: 0,
-            impressions_growth_percent: 0.0,
-            total_engagement: 0,
-            engagement_rate: 0.0,
-          },
-          trends: [],
-          channel_breakdown: [],
-        });
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadAnalytics();
-  }, [period]);
+    void loadAnalytics();
+  }, [loadAnalytics]);
 
   const kpis = analytics?.kpis || {
     total_followers: 0,
@@ -74,8 +68,10 @@ export default function AnalyticsPage() {
         <div className="flex items-center gap-1 bg-white border border-slate-200 p-1 rounded-md">
           {[7, 14, 30, 90].map((p) => (
             <button
+              type="button"
               key={p}
               onClick={() => setPeriod(p)}
+              aria-pressed={period === p}
               className={`px-2.5 py-1 rounded text-xs font-medium transition ${
                 period === p
                   ? 'bg-slate-900 text-white'
@@ -88,8 +84,21 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
+      {loadError && (
+        <div className="ui-card border-rose-200 bg-rose-50 text-rose-800 p-3 flex items-center justify-between gap-3" role="alert">
+          <span className="text-xs flex items-start gap-2"><AlertCircle className="w-4 h-4 shrink-0" />{loadError}</span>
+          <button type="button" className="ui-btn ui-btn-secondary shrink-0" onClick={() => void loadAnalytics()}>
+            <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
+          </button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="ui-card py-8 text-center text-xs text-slate-500" role="status">Memuat metrik analitik...</div>
+      )}
+
       {/* KPI Cards Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
         <div className="ui-card space-y-1.5">
           <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
             Total Pengikut
@@ -98,7 +107,7 @@ export default function AnalyticsPage() {
             {kpis.total_followers.toLocaleString('id-ID')}
           </p>
           <span className="text-[11px] text-slate-500 block">
-            Pertumbuhan: +{kpis.follower_growth_percent}%
+            Pertumbuhan: {formatDelta(kpis.follower_growth_percent)}
           </span>
         </div>
 
@@ -110,7 +119,7 @@ export default function AnalyticsPage() {
             {kpis.total_impressions.toLocaleString('id-ID')}
           </p>
           <span className="text-[11px] text-slate-500 block">
-            Pertumbuhan: +{kpis.impressions_growth_percent}%
+            Pertumbuhan: {formatDelta(kpis.impressions_growth_percent)}
           </span>
         </div>
 
@@ -163,9 +172,9 @@ export default function AnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {trends.map((t, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/50 transition">
-                      <td className="py-2 px-3 font-semibold text-slate-800">{t.date}</td>
+                  {trends.map((t) => (
+                    <tr key={t.date} className="hover:bg-slate-50/50 transition">
+                      <td className="py-2 px-3 font-semibold text-slate-800">{formatTrendDate(t.date)}</td>
                       <td className="py-2 px-3 text-slate-600">{t.impressions.toLocaleString('id-ID')}</td>
                       <td className="py-2 px-3 text-slate-600">{t.reach.toLocaleString('id-ID')}</td>
                       <td className="py-2 px-3 text-slate-600">{t.engagement.toLocaleString('id-ID')}</td>

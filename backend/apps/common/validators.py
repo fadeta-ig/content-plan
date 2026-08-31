@@ -3,9 +3,9 @@
 import ipaddress
 import re
 import socket
-import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 
+from defusedxml import ElementTree
 from django.core.exceptions import ValidationError
 
 MAX_TAGS = 25
@@ -143,13 +143,12 @@ def is_valid_hex_color(value: str) -> bool:
     return isinstance(value, str) and bool(_HEX_COLOR_RE.match(value))
 
 
-def safe_xml_fromstring(body: bytes, *, max_bytes: int = MAX_XML_BYTES) -> ET.Element | None:
+def safe_xml_fromstring(body: bytes, *, max_bytes: int = MAX_XML_BYTES) -> ElementTree.Element | None:
     """Parse RSS/Atom/Webhook XML safely.
 
-    Hardens against billion-laughs / quadratic-blowup attacks WITHOUT pulling in
-    the `defusedxml` dependency: we cap body size and reject any document that
-    declares a DTD or internal entities. Legitimate RSS/Atom/PubSubHubbub
-    payloads never need either.
+    Uses ``defusedxml`` plus an explicit size cap. DTD/entity declarations are
+    rejected before parsing because legitimate RSS/Atom/PubSubHubbub payloads
+    never need either.
 
     Returns the parsed root element, or None for any reject path (oversized,
     DTD/entity-bearing, or malformed XML). Callers should treat None as
@@ -166,8 +165,8 @@ def safe_xml_fromstring(body: bytes, *, max_bytes: int = MAX_XML_BYTES) -> ET.El
     if b"<!doctype" in head or b"<!entity" in head:
         return None
     try:
-        return ET.fromstring(body)
-    except ET.ParseError:
+        return ElementTree.fromstring(body)
+    except ElementTree.ParseError:
         return None
 
 

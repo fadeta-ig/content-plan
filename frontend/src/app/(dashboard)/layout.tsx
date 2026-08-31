@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { User, Workspace } from '@/lib/types';
-import { Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { useToast } from '@/components/ui/Toast';
 
 export default function DashboardLayout({
   children,
@@ -14,31 +15,87 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [authError, setAuthError] = useState('');
+  const [switchingWorkspaceId, setSwitchingWorkspaceId] = useState<string | null>(null);
 
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
+    setIsCheckingAuth(true);
+    setAuthError('');
     try {
       const data = await api.getMe();
       if (data && data.user) {
         setUser(data.user);
         setActiveWorkspace(data.active_workspace);
         setWorkspaces(data.workspaces || []);
-        setIsCheckingAuth(false);
       } else {
-        router.push('/login');
+        router.replace('/login');
       }
-    } catch (e) {
-      router.push('/login');
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        router.replace('/login');
+        return;
+      }
+      setAuthError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Server tidak dapat dihubungi. Sesi Anda belum dapat diverifikasi.'
+      );
+    } finally {
+      setIsCheckingAuth(false);
     }
-  };
+  }, [router]);
 
   useEffect(() => {
-    loadUserData();
+    void loadUserData();
+  }, [loadUserData]);
+
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const syncSidebar = () => setIsSidebarOpen(desktop.matches);
+    syncSidebar();
+    desktop.addEventListener('change', syncSidebar);
+    return () => desktop.removeEventListener('change', syncSidebar);
   }, []);
+
+  useEffect(() => {
+    if (!isSidebarOpen || window.innerWidth >= 1024) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsSidebarOpen(false);
+    };
+
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isSidebarOpen]);
+
+  const handleSwitchWorkspace = async (workspaceId: string) => {
+    if (workspaceId === activeWorkspace?.id) return;
+    setSwitchingWorkspaceId(workspaceId);
+    try {
+      await api.switchWorkspace(workspaceId);
+      const workspace = workspaces.find((item) => item.id === workspaceId);
+      toast.success('Workspace Dialihkan', `Membuka ${workspace?.name || 'workspace yang dipilih'}...`);
+      window.location.reload();
+    } catch (error) {
+      toast.error(
+        'Gagal Mengalihkan Workspace',
+        error instanceof Error && error.message ? error.message : 'Akses workspace tidak dapat diverifikasi.'
+      );
+      setSwitchingWorkspaceId(null);
+    }
+  };
 
   if (isCheckingAuth) {
     return (
@@ -54,18 +111,47 @@ export default function DashboardLayout({
     );
   }
 
+  if (authError) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4">
+        <div className="ui-card max-w-md w-full p-6 text-center space-y-3" role="alert">
+          <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
+          <div>
+            <h1 className="text-sm font-semibold text-slate-900">Sistem belum dapat dibuka</h1>
+            <p className="text-xs text-slate-500 mt-1">{authError}</p>
+          </div>
+          <button type="button" className="ui-btn ui-btn-primary" onClick={loadUserData}>
+            <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-[#f8fafc] text-slate-800">
       <Sidebar
         activeWorkspace={activeWorkspace}
         workspaces={workspaces}
         isOpen={isSidebarOpen}
+        switchingWorkspaceId={switchingWorkspaceId}
+        onSwitchWorkspace={handleSwitchWorkspace}
+        onNavigate={() => {
+          if (window.innerWidth < 1024) setIsSidebarOpen(false);
+        }}
       />
+      {isSidebarOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-label="Tutup menu navigasi"
+        />
+      )}
       <div className="flex-1 flex flex-col min-w-0">
         <Header
           user={user}
           activeWorkspace={activeWorkspace}
-          isBackendConnected={true}
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         />

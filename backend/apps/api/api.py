@@ -61,7 +61,6 @@ api.add_router("/analytics", analytics_router)
 api.add_router("/mcp", mcp_router, auth=McpAuth())
 
 
-
 # ---------------------------------------------------------------------------
 # Error envelopes — convert Ninja's plain-text 4xx/5xx into the structured
 # error shape so agents can parse ``tier``, ``retry_after``, etc. without

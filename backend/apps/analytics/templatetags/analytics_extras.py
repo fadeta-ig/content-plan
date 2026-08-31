@@ -9,7 +9,7 @@ Three jobs:
 from __future__ import annotations
 
 from django import template
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 
 register = template.Library()
 
@@ -54,7 +54,12 @@ def sparkline(values, color: str = "var(--primary)", width: int = 160, height: i
     """Render an inline SVG sparkline. ``values`` is a list of numbers."""
     if not values:
         return ""
-    vals = [float(v) for v in values]
+    try:
+        vals = [float(v) for v in values]
+        width = max(1, min(int(width), 1_000))
+        height = max(1, min(int(height), 1_000))
+    except (TypeError, ValueError):
+        return ""
     n = len(vals)
     vmin, vmax = min(vals), max(vals)
     rng = (vmax - vmin) or 1.0
@@ -69,15 +74,22 @@ def sparkline(values, color: str = "var(--primary)", width: int = 160, height: i
         pts.append((x, y))
     path_d = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}" for i, (x, y) in enumerate(pts))
     fill_d = path_d + f" L{pts[-1][0]:.1f},{height - pad} L{pts[0][0]:.1f},{height - pad} Z"
-    svg = (
-        f'<svg viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
-        f'preserveAspectRatio="none" style="display:block">'
-        f'<path d="{fill_d}" fill="{color}" fill-opacity="0.12" stroke="none"/>'
-        f'<path d="{path_d}" fill="none" stroke="{color}" stroke-width="1.8" '
-        f'stroke-linecap="round" stroke-linejoin="round"/>'
-        f"</svg>"
+    return format_html(
+        '<svg viewBox="0 0 {} {}" width="{}" height="{}" '
+        'preserveAspectRatio="none" style="display:block">'
+        '<path d="{}" fill="{}" fill-opacity="0.12" stroke="none"/>'
+        '<path d="{}" fill="none" stroke="{}" stroke-width="1.8" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+        "</svg>",
+        width,
+        height,
+        width,
+        height,
+        fill_d,
+        color,
+        path_d,
+        color,
     )
-    return mark_safe(svg)
 
 
 @register.filter

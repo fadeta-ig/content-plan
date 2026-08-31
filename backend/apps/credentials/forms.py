@@ -1,5 +1,5 @@
 from django import forms
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html, format_html_join
 
 from .models import REQUIRED_CREDENTIAL_KEYS, PlatformCredential, derive_is_configured
 
@@ -18,10 +18,10 @@ _KEY_HINTS = {
     "linkedin_company": "client_id, client_secret",
 }
 
-CREDENTIALS_HELP = mark_safe(
-    'JSON object of app credentials, e.g. <code>{"client_id": "...", "client_secret": "..."}</code>. '
-    "Required keys per platform:<br>"
-    + "<br>".join(f"<b>{platform}</b>: {hint}" for platform, hint in _KEY_HINTS.items())
+CREDENTIALS_HELP = format_html(
+    'JSON object of app credentials, e.g. <code>{{"client_id": "...", "client_secret": "..."}}</code>. '
+    "Required keys per platform:<br>{}",
+    format_html_join("<br>", "<b>{}</b>: {}", _KEY_HINTS.items()),
 )
 
 

@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Optional
-from django.contrib.auth import authenticate, login as django_login, logout as django_logout
-from django.db import transaction
-from django.http import HttpRequest
-from django.utils import timezone
+from typing import cast
+
+from django.contrib.auth import authenticate
+from django.contrib.auth import login as django_login
+from django.contrib.auth import logout as django_logout
+from django.http import HttpRequest, JsonResponse
+from django.middleware.csrf import get_token
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from apps.accounts.models import User
-from apps.members.models import OrgMembership, WorkspaceMembership
-from apps.organizations.models import Organization
-from apps.workspaces.models import Workspace
-from .helpers import frontend_auth, get_current_user_and_workspace
+from apps.members.models import WorkspaceMembership
 
+from .helpers import FrontendRequest, csrf_only_auth, frontend_auth, get_current_user_and_workspace
 
 router = Router(tags=["frontend-auth"], auth=frontend_auth)
 
@@ -25,15 +26,19 @@ class LoginRequest(Schema):
     password: str
 
 
-class RegisterRequest(Schema):
-    email: str
-    name: str
-    password: str
-    organization_name: Optional[str] = "PT Wijaya Inovasi Gemilang"
-    workspace_name: Optional[str] = "Content Plan Studio"
+class WorkspaceSwitchRequest(Schema):
+    workspace_id: str
 
 
-@router.post("/login", summary="User Login", auth=None)
+@router.get("/csrf", summary="Issue CSRF Token", auth=None)
+@ensure_csrf_cookie
+@csrf_exempt
+def auth_csrf(request: HttpRequest):
+    """Issue the CSRF cookie/token required by cookie-authenticated writes."""
+    return JsonResponse({"csrf_token": get_token(request)})
+
+
+@router.post("/login", summary="User Login", auth=csrf_only_auth)
 def auth_login(request: HttpRequest, payload: LoginRequest):
     clean_email = payload.email.strip().lower()
     user = authenticate(request, username=clean_email, password=payload.password) or authenticate(
@@ -47,10 +52,19 @@ def auth_login(request: HttpRequest, payload: LoginRequest):
         raise HttpError(403, "Akun ini telah dinonaktifkan. Hubungi administrator.")
 
     django_login(request, user)
+
+    if user.tos_accepted_at is None:
+        return {
+            "success": True,
+            "requires_tos": True,
+            "accept_terms_url": "/accounts/accept-terms/",
+        }
+
     _, workspace = get_current_user_and_workspace(request)
 
     return {
         "success": True,
+        "requires_tos": False,
         "user": {
             "id": str(user.id),
             "email": user.email,
@@ -62,65 +76,11 @@ def auth_login(request: HttpRequest, payload: LoginRequest):
     }
 
 
-@router.post("/register", summary="User Registration", auth=None)
-def auth_register(request: HttpRequest, payload: RegisterRequest):
-    clean_email = payload.email.strip().lower()
-    if User.objects.filter(email=clean_email).exists():
-        raise HttpError(400, "Akun dengan email ini sudah terdaftar.")
-
-    with transaction.atomic():
-        user = User.objects.create_user(
-            email=clean_email,
-            password=payload.password,
-            name=payload.name.strip(),
-            tos_accepted_at=timezone.now(),
-        )
-
-        org, _ = Organization.objects.get_or_create(
-            name=payload.organization_name or "PT Wijaya Inovasi Gemilang",
-            defaults={"default_timezone": "Asia/Jakarta"},
-        )
-
-        OrgMembership.objects.get_or_create(
-            organization=org,
-            user=user,
-            defaults={"org_role": OrgMembership.OrgRole.OWNER},
-        )
-
-        workspace, _ = Workspace.objects.get_or_create(
-            organization=org,
-            name=payload.workspace_name or "Content Plan Studio",
-            defaults={"timezone": "Asia/Jakarta"},
-        )
-
-        WorkspaceMembership.objects.get_or_create(
-            workspace=workspace,
-            user=user,
-            defaults={"workspace_role": WorkspaceMembership.WorkspaceRole.OWNER},
-        )
-
-        user.last_workspace_id = workspace.id
-        user.save(update_fields=["last_workspace_id"])
-        django_login(request, user)
-
-    return {
-        "success": True,
-        "user": {
-            "id": str(user.id),
-            "email": user.email,
-            "name": user.name,
-            "avatar_url": "",
-            "is_staff": user.is_staff,
-            "active_workspace_id": str(workspace.id),
-        },
-    }
-
-
 @router.get("/me", summary="Get Current User Profile")
 def auth_me(request: HttpRequest):
     user, active_workspace = get_current_user_and_workspace(request)
 
-    memberships = WorkspaceMembership.objects.filter(user=user).select_related(
+    memberships = WorkspaceMembership.objects.filter(user=user, workspace__is_archived=False).select_related(
         "workspace", "workspace__organization"
     )
     workspaces_data = [
@@ -151,6 +111,8 @@ def auth_me(request: HttpRequest):
             "name": active_workspace.name,
             "slug": str(active_workspace.id),
             "color": active_workspace.primary_color or "#0f172a",
+            "logo_url": active_workspace.icon.url if active_workspace.icon else "",
+            "role": cast(FrontendRequest, request).workspace_membership.workspace_role,
             "approval_workflow_mode": active_workspace.approval_workflow_mode,
             "organization_name": active_workspace.organization.name,
         }
@@ -159,7 +121,18 @@ def auth_me(request: HttpRequest):
     }
 
 
+@router.post("/switch-workspace", summary="Switch Active Workspace")
+def auth_switch_workspace(request: HttpRequest, payload: WorkspaceSwitchRequest):
+    request.META["HTTP_X_WORKSPACE_ID"] = payload.workspace_id
+    _, workspace = get_current_user_and_workspace(request)
+    return {
+        "success": True,
+        "message": f"Workspace aktif diubah ke {workspace.name}.",
+        "workspace_id": str(workspace.id),
+    }
+
+
 @router.post("/logout", summary="User Logout")
 def auth_logout(request: HttpRequest):
     django_logout(request)
-    return {"success": True, "message": "Logged out successfully."}
+    return {"success": True, "message": "Sesi berhasil diakhiri."}

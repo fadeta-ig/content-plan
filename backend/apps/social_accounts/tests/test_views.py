@@ -332,7 +332,7 @@ class TestSelectAccountView:
 
 @pytest.mark.django_db
 class TestDisconnectView:
-    def test_disconnect_removes_account(self, authenticated_client, workspace):
+    def test_disconnect_preserves_account_and_clears_credentials(self, authenticated_client, workspace):
         account = SocialAccount.objects.create(
             workspace=workspace,
             platform="facebook",
@@ -351,7 +351,10 @@ class TestDisconnectView:
             response = authenticated_client.post(url)
 
         assert response.status_code == 302
-        assert SocialAccount.objects.filter(pk=account.pk).count() == 0
+        account.refresh_from_db()
+        assert account.connection_status == SocialAccount.ConnectionStatus.DISCONNECTED
+        assert account.oauth_access_token == ""
+        assert account.oauth_refresh_token == ""
 
     def test_disconnect_requires_post(self, authenticated_client, workspace):
         account = SocialAccount.objects.create(

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -40,7 +40,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const addToast = useCallback(
     (type: ToastType, title: string, description?: string, duration = 4000) => {
-      const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const newToast: ToastItem = { id, type, title, description, duration };
 
       setToasts((prev) => [...prev, newToast]);
@@ -54,21 +54,31 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     [removeToast]
   );
 
-  const toast = {
-    success: (title: string, description?: string) => addToast('success', title, description),
-    error: (title: string, description?: string) => addToast('error', title, description),
-    warning: (title: string, description?: string) => addToast('warning', title, description),
-    info: (title: string, description?: string) => addToast('info', title, description),
-  };
+  const toast = useMemo(
+    () => ({
+      success: (title: string, description?: string) => addToast('success', title, description),
+      error: (title: string, description?: string) => addToast('error', title, description),
+      warning: (title: string, description?: string) => addToast('warning', title, description),
+      info: (title: string, description?: string) => addToast('info', title, description),
+    }),
+    [addToast]
+  );
+
+  const contextValue = useMemo(() => ({ toast, removeToast }), [toast, removeToast]);
 
   return (
-    <ToastContext.Provider value={{ toast, removeToast }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       {/* Toast Viewport Container */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+      <div
+        className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-[calc(100%-2rem)] pointer-events-none"
+        aria-label="Notifikasi sistem"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}
+            role={t.type === 'error' || t.type === 'warning' ? 'alert' : 'status'}
+            aria-live={t.type === 'error' || t.type === 'warning' ? 'assertive' : 'polite'}
             className={`pointer-events-auto p-3.5 rounded-lg border bg-white shadow-sm flex items-start gap-3 transition-all transform animate-in slide-in-from-bottom-2 ${
               t.type === 'success'
                 ? 'border-emerald-200 text-slate-800'
@@ -97,9 +107,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
             {/* Close Button */}
             <button
+              type="button"
               onClick={() => removeToast(t.id)}
               className="text-slate-400 hover:text-slate-600 p-0.5 shrink-0"
-              aria-label="Tutup"
+              aria-label={`Tutup notifikasi: ${t.title}`}
             >
               <X className="w-3.5 h-3.5" />
             </button>

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
 import {
   X,
   Upload,
@@ -8,6 +9,8 @@ import {
   Video,
   Check,
   FolderOpen,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { MediaItem } from '@/lib/types';
@@ -30,48 +33,79 @@ export default function MediaPickerModal({
   const [assets, setAssets] = useState<MediaItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds);
   const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const initialSelectedKey = initialSelectedIds.join(',');
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const uploadingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    uploadingRef.current = uploading;
+  }, [uploading]);
+
+  const loadAssets = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const data = await api.getMedia();
+      setAssets(data.assets || []);
+    } catch (error) {
+      setAssets([]);
+      setLoadError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Media tidak dapat dimuat. Periksa koneksi lalu coba lagi.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
+    setSelectedIds(initialSelectedKey ? initialSelectedKey.split(',') : []);
+    void loadAssets();
+  }, [isOpen, initialSelectedKey, loadAssets]);
 
-    async function loadAssets() {
-      try {
-        const data = await api.getMedia();
-        if (data.assets && data.assets.length > 0) {
-          setAssets(data.assets);
-        } else {
-          throw new Error('Empty');
-        }
-      } catch (err) {
-        setAssets([
-          {
-            id: 'm-1',
-            title: 'hero-banner-q3-2026.png',
-            file_url: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600&auto=format&fit=crop&q=80',
-            thumbnail_url: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600&auto=format&fit=crop&q=80',
-            file_type: 'image',
-            file_size: 480000,
-          },
-          {
-            id: 'm-2',
-            title: 'infografis-ai-enterprise.png',
-            file_url: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&auto=format&fit=crop&q=80',
-            thumbnail_url: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&auto=format&fit=crop&q=80',
-            file_type: 'image',
-            file_size: 620000,
-          },
-          {
-            id: 'm-3',
-            title: 'dokumentasi-workshop-tech.png',
-            file_url: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=600&auto=format&fit=crop&q=80',
-            thumbnail_url: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=600&auto=format&fit=crop&q=80',
-            file_type: 'image',
-            file_size: 780000,
-          },
-        ]);
+  useEffect(() => {
+    if (!isOpen) return;
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    cancelButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !uploadingRef.current) {
+        onCloseRef.current();
+        return;
       }
-    }
-    loadAssets();
+      if (event.key !== 'Tab') return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocusedRef.current?.focus();
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -97,20 +131,16 @@ export default function MediaPickerModal({
         setSelectedIds((prev) => [...prev, data.asset.id]);
         toast.success('Media Terunggah', `${file.name} berhasil diunggah dan dipilih.`);
       }
-    } catch (err: any) {
-      const fallbackItem: MediaItem = {
-        id: `upload-${Date.now()}`,
-        title: file.name,
-        file_url: URL.createObjectURL(file),
-        thumbnail_url: URL.createObjectURL(file),
-        file_type: file.type.includes('video') ? 'video' : 'image',
-        file_size: file.size,
-      };
-      setAssets((prev) => [fallbackItem, ...prev]);
-      setSelectedIds((prev) => [...prev, fallbackItem.id]);
-      toast.success('Media Terlampir', `${file.name} berhasil dilampirkan.`);
+    } catch (error) {
+      toast.error(
+        'Unggah Media Gagal',
+        error instanceof Error && error.message
+          ? error.message
+          : `${file.name} belum tersimpan. Periksa format, ukuran, dan koneksi lalu coba lagi.`
+      );
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -123,17 +153,23 @@ export default function MediaPickerModal({
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-      <div className="bg-white border border-slate-200 rounded-2xl max-w-4xl w-full flex flex-col max-h-[90vh] overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 my-auto">
+      <div
+        ref={dialogRef}
+        className="bg-white border border-slate-200 rounded-2xl max-w-4xl w-full flex flex-col max-h-[90vh] overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 my-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="media-picker-title"
+      >
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
           <div className="flex items-center gap-2">
             <FolderOpen className="w-4 h-4 text-slate-700" />
-            <h3 className="text-xs font-semibold text-slate-900 uppercase tracking-wide">
+            <h3 id="media-picker-title" className="text-xs font-semibold text-slate-900 uppercase tracking-wide">
               Pilih Media untuk Postingan
             </h3>
           </div>
 
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <button type="button" onClick={onClose} disabled={uploading} className="text-slate-400 hover:text-slate-600" aria-label="Tutup pemilih media">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -158,13 +194,40 @@ export default function MediaPickerModal({
         </div>
 
         {/* Media Grid */}
-        <div className="p-3.5 flex-1 overflow-y-auto grid grid-cols-3 sm:grid-cols-4 gap-3 bg-slate-50/30">
+        <div className="p-3.5 flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50/30">
+          {loading && (
+            <div className="col-span-full py-10 text-center text-xs text-slate-500" role="status">
+              Memuat pustaka media...
+            </div>
+          )}
+          {!loading && loadError && (
+            <div className="col-span-full py-8 text-center space-y-3" role="alert">
+              <AlertCircle className="w-7 h-7 text-rose-500 mx-auto" />
+              <div>
+                <p className="text-xs font-semibold text-slate-800">Pustaka media gagal dimuat</p>
+                <p className="text-[11px] text-slate-500 mt-1">{loadError}</p>
+              </div>
+              <button type="button" className="ui-btn ui-btn-secondary" onClick={() => void loadAssets()}>
+                <RefreshCw className="w-3.5 h-3.5" /> Muat Ulang
+              </button>
+            </div>
+          )}
+          {!loading && !loadError && assets.length === 0 && (
+            <div className="col-span-full py-10 text-center space-y-2">
+              <ImageIcon className="w-7 h-7 text-slate-300 mx-auto" />
+              <p className="text-xs font-semibold text-slate-700">Pustaka media masih kosong</p>
+              <p className="text-[11px] text-slate-500">Unggah gambar atau video untuk mulai menambahkan lampiran.</p>
+            </div>
+          )}
           {assets.map((item) => {
             const isSelected = selectedIds.includes(item.id);
             return (
-              <div
+              <button
+                type="button"
                 key={item.id}
                 onClick={() => toggleSelect(item.id)}
+                aria-pressed={isSelected}
+                aria-label={`${isSelected ? 'Batalkan pilihan' : 'Pilih'} ${item.title}`}
                 className={`rounded-md border p-1.5 bg-white cursor-pointer transition relative group flex flex-col justify-between ${
                   isSelected
                     ? 'border-slate-900 ring-1 ring-slate-900'
@@ -184,9 +247,11 @@ export default function MediaPickerModal({
 
                 <div className="aspect-square rounded bg-slate-100 overflow-hidden flex items-center justify-center relative">
                   {item.file_type === 'image' && item.file_url ? (
-                    <img
+                    <Image
                       src={item.thumbnail_url || item.file_url}
-                      alt={item.title}
+                      alt={item.title || 'Media pustaka'}
+                      fill
+                      sizes="(max-width: 640px) 50vw, 25vw"
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -197,14 +262,14 @@ export default function MediaPickerModal({
                 <p className="text-[10px] font-medium text-slate-700 truncate mt-1.5 px-0.5">
                   {item.title}
                 </p>
-              </div>
+              </button>
             );
           })}
         </div>
 
         {/* Footer Actions */}
         <div className="p-3 border-t border-slate-200 bg-white flex items-center justify-end gap-2">
-          <button type="button" onClick={onClose} className="ui-btn ui-btn-secondary">
+          <button ref={cancelButtonRef} type="button" onClick={onClose} className="ui-btn ui-btn-secondary">
             Batal
           </button>
           <button

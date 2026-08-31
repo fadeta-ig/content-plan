@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   X,
@@ -15,7 +15,7 @@ import {
 import { KanbanCard } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 
 const STATUS_STEPS = [
   { id: 'unassigned', label: 'Ide / Backlog', color: 'bg-slate-100 text-slate-700 border-slate-300' },
@@ -49,6 +49,19 @@ export default function IdeaPreviewModal({
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [currentColumn, setCurrentColumn] = useState(columnId || idea.status || 'unassigned');
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const savingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    savingRef.current = saving;
+  }, [saving]);
 
   const handleSaveEdit = async () => {
     if (!editTitle.trim()) {
@@ -72,8 +85,8 @@ export default function IdeaPreviewModal({
       onUpdateIdea(updated);
       setIsEditing(false);
       toast.success('Naskah Diperbarui', 'Perubahan judul dan naskah ide berhasil disimpan.');
-    } catch (err: any) {
-      toast.error('Gagal Memperbarui', err.message || 'Gagal menyimpan perubahan.');
+    } catch (error: unknown) {
+      toast.error('Gagal Memperbarui', getErrorMessage(error, 'Gagal menyimpan perubahan.'));
     } finally {
       setSaving(false);
     }
@@ -88,8 +101,8 @@ export default function IdeaPreviewModal({
       setCurrentColumn(newStatus);
       onUpdateIdea(updated, newStatus);
       toast.success('Tahap Diperbarui', `Status ide dipindahkan ke "${STATUS_STEPS.find((s) => s.id === newStatus)?.label}".`);
-    } catch (err: any) {
-      toast.error('Gagal Memperbarui Status', err.message || 'Gagal memperbarui status ide.');
+    } catch (error: unknown) {
+      toast.error('Gagal Memperbarui Status', getErrorMessage(error, 'Gagal memperbarui status ide.'));
     }
   };
 
@@ -134,14 +147,37 @@ export default function IdeaPreviewModal({
 
   // Keyboard accessibility: Close on Escape
   useEffect(() => {
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus();
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
+      if (e.key === 'Escape' && !savingRef.current) {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocusedRef.current?.focus();
+    };
+  }, []);
 
   // Word count & read time estimations
   const totalWords = (idea.content || '').trim().split(/\s+/).filter(Boolean).length;
@@ -154,7 +190,13 @@ export default function IdeaPreviewModal({
       }}
       className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
     >
-      <div className="bg-white border border-slate-200 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="idea-preview-title"
+        className="bg-white border border-slate-200 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+      >
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -163,7 +205,7 @@ export default function IdeaPreviewModal({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                <h3 id="idea-preview-title" className="text-xs font-bold uppercase tracking-wider text-slate-500">
                   Pratinjau Naskah &amp; Brief Ide
                 </h3>
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-white border border-slate-200 text-slate-600">
@@ -177,9 +219,12 @@ export default function IdeaPreviewModal({
           </div>
 
           <button
+            ref={closeButtonRef}
+            type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 p-1.5 rounded-lg transition"
             title="Tutup Pratinjau"
+            aria-label="Tutup pratinjau ide"
           >
             <X className="w-4 h-4" />
           </button>
@@ -189,10 +234,10 @@ export default function IdeaPreviewModal({
         <div className="p-5 overflow-y-auto space-y-4 flex-1">
           {/* Status Stepper */}
           <div className="space-y-1.5">
-            <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide block">
+            <p id="idea-status-label" className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide block">
               Tahap Produksi Ide:
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5" role="group" aria-labelledby="idea-status-label">
               {STATUS_STEPS.map((step) => {
                 const isActive = currentColumn === step.id;
                 return (
@@ -200,6 +245,7 @@ export default function IdeaPreviewModal({
                     key={step.id}
                     type="button"
                     onClick={() => handleStatusChange(step.id)}
+                    aria-pressed={isActive}
                     className={`px-2.5 py-1.5 rounded-md text-xs font-semibold border flex items-center justify-between transition ${
                       isActive
                         ? `${step.color} ring-2 ring-blue-500/20 shadow-xs`
@@ -233,10 +279,11 @@ export default function IdeaPreviewModal({
 
               <div className="space-y-2.5">
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  <label htmlFor="edit-idea-title" className="text-[11px] font-semibold text-slate-700 block mb-1">
                     Judul Ide / Topik:
                   </label>
                   <input
+                    id="edit-idea-title"
                     type="text"
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
@@ -246,10 +293,11 @@ export default function IdeaPreviewModal({
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  <label htmlFor="edit-idea-content" className="text-[11px] font-semibold text-slate-700 block mb-1">
                     Rundown Naskah / Detail Brief:
                   </label>
                   <textarea
+                    id="edit-idea-content"
                     rows={12}
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
@@ -323,7 +371,7 @@ export default function IdeaPreviewModal({
                   </div>
                 ) : (
                   <div className="py-8 text-center text-slate-400 text-xs italic bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
-                    Belum ada naskah atau brief tertulis. Klik "Ubah Naskah" di atas untuk menambahkan catatan naskah.
+                    Belum ada naskah atau brief tertulis. Klik &ldquo;Ubah Naskah&rdquo; di atas untuk menambahkan catatan naskah.
                   </div>
                 )}
               </div>

@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useCallback, useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   PenSquare,
   Image as ImageIcon,
@@ -10,17 +11,10 @@ import {
   Clock,
   Send,
   MessageSquare,
-  Sparkles,
-  CheckCircle2,
-  AlertCircle,
   Smartphone,
-  Check,
   X,
-  Trash2,
-  ArrowLeft,
-  RefreshCw,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { MediaItem, SocialAccount } from '@/lib/types';
 import SocialIcon from '@/components/ui/SocialIcon';
 import MediaPickerModal from '@/components/composer/MediaPickerModal';
@@ -44,14 +38,13 @@ function ComposerForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const postIdParam = searchParams.get('post_id');
-  const ideaIdParam = searchParams.get('idea_id');
   const titleParam = searchParams.get('title');
   const contentParam = searchParams.get('content');
 
   const toast = useToast();
   const { confirm } = useConfirm();
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['instagram', 'linkedin']);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [caption, setCaption] = useState('');
   const [firstComment, setFirstComment] = useState('');
   const [showFirstComment, setShowFirstComment] = useState(false);
@@ -61,24 +54,39 @@ function ComposerForm() {
   const [attachedMedia, setAttachedMedia] = useState<MediaItem[]>([]);
   const [isMediaModalOpen, setIsMediaModalOpen] = useState(false);
   const [connectedAccounts, setConnectedAccounts] = useState<SocialAccount[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsError, setAccountsError] = useState('');
+
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true);
+    setAccountsError('');
+    try {
+      const data = await api.getSocialAccounts();
+      const accounts = data.accounts || [];
+      setConnectedAccounts(accounts);
+      if (!postIdParam) {
+        const availablePlatforms = Array.from(new Set(accounts.map((account) => account.platform)));
+        setSelectedPlatforms(availablePlatforms);
+        if (availablePlatforms[0]) {
+          setActivePreviewTab(availablePlatforms[0]);
+        }
+      }
+    } catch (error) {
+      setConnectedAccounts([]);
+      setSelectedPlatforms([]);
+      setAccountsError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Daftar akun sosial tidak dapat dimuat. Periksa koneksi lalu coba lagi.'
+      );
+    } finally {
+      setAccountsLoading(false);
+    }
+  }, [postIdParam]);
 
   useEffect(() => {
-    async function loadAccounts() {
-      try {
-        const data = await api.getSocialAccounts();
-        if (data.accounts && data.accounts.length > 0) {
-          setConnectedAccounts(data.accounts);
-          setSelectedPlatforms(data.accounts.map((a) => a.platform));
-          if (data.accounts[0]) {
-            setActivePreviewTab(data.accounts[0].platform);
-          }
-        }
-      } catch (e) {
-        // Fallback
-      }
-    }
-    loadAccounts();
-  }, []);
+    void loadAccounts();
+  }, [loadAccounts]);
 
   // Load existing post if post_id is provided in URL
   useEffect(() => {
@@ -109,12 +117,12 @@ function ComposerForm() {
           }
           toast.info('Mode Edit Aktif', 'Data postingan berhasil dimuat dari kalender.');
         }
-      } catch (err: any) {
-        toast.error('Gagal Memuat Post', err.message || 'Postingan tidak ditemukan.');
+      } catch (error: unknown) {
+        toast.error('Gagal Memuat Post', getErrorMessage(error, 'Postingan tidak ditemukan.'));
       }
     }
     loadPostToEdit();
-  }, [postIdParam]);
+  }, [postIdParam, toast]);
 
   // Prefill title & content from query params if available (e.g. from Kanban)
   useEffect(() => {
@@ -154,7 +162,7 @@ function ComposerForm() {
   const executePostCreation = async (postNow: boolean) => {
     setSubmitting(true);
     try {
-      const res = await api.createPost({
+      await api.createPost({
         post_id: editingPostId || undefined,
         master_caption: caption,
         target_account_ids: selectedPlatforms,
@@ -165,7 +173,10 @@ function ComposerForm() {
       });
 
       if (postNow) {
-        toast.success('Postingan Terbit', 'Konten berhasil disimpan dan dipublikasikan ke seluruh saluran terpilih.');
+        toast.success(
+          'Masuk Antrean Publikasi',
+          'Konten telah disimpan dan dijadwalkan untuk diproses segera. Status terbit akan diperbarui setelah platform mengonfirmasi.'
+        );
       } else {
         toast.success(
           editingPostId ? 'Perubahan Disimpan' : 'Postingan Dijadwalkan',
@@ -180,8 +191,8 @@ function ComposerForm() {
         setFirstComment('');
         setAttachedMedia([]);
       }
-    } catch (err: any) {
-      toast.error('Gagal Menyimpan', err.message || 'Gagal menyimpan postingan ke database.');
+    } catch (error: unknown) {
+      toast.error('Gagal Menyimpan', getErrorMessage(error, 'Gagal menyimpan postingan ke database.'));
     } finally {
       setSubmitting(false);
     }
@@ -193,11 +204,21 @@ function ComposerForm() {
       return;
     }
 
+    if (selectedPlatforms.length === 0) {
+      toast.warning(
+        'Saluran Belum Dipilih',
+        accountsError
+          ? 'Daftar akun belum berhasil dimuat. Coba lagi sebelum menyimpan postingan.'
+          : 'Hubungkan dan pilih minimal satu akun sosial aktif sebelum menyimpan postingan.'
+      );
+      return;
+    }
+
     if (postNow) {
       confirm({
         title: 'Konfirmasi Terbitkan Sekarang',
-        message: `Postingan ini akan langsung dipublikasikan ke ${selectedPlatforms.length} saluran media sosial aktif. Lanjutkan proses penerbitan?`,
-        confirmText: 'Ya, Terbitkan Sekarang',
+        message: `Postingan ini akan disimpan lalu dimasukkan ke antrean publikasi segera untuk ${selectedPlatforms.length} saluran aktif. Status berhasil hanya diberikan setelah platform mengonfirmasi. Lanjutkan?`,
+        confirmText: 'Ya, Antrekan Sekarang',
         type: 'publish',
         onConfirm: () => executePostCreation(true),
       });
@@ -205,7 +226,7 @@ function ComposerForm() {
       confirm({
         title: editingPostId ? 'Konfirmasi Simpan Perubahan' : 'Konfirmasi Penjadwalan Konten',
         message: scheduledAt
-          ? `Postingan ini akan dijadwalkan tayang pada ${new Date(scheduledAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })} WIB ke ${selectedPlatforms.length} saluran aktif. Simpan jadwal?`
+          ? `Postingan ini akan dijadwalkan tayang pada ${new Date(scheduledAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })} sesuai zona waktu workspace ke ${selectedPlatforms.length} saluran aktif. Simpan jadwal?`
           : 'Postingan ini akan disimpan sebagai draft ke dalam antrean kalender. Simpan draft?',
         confirmText: editingPostId ? 'Ya, Simpan Perubahan' : 'Ya, Simpan Jadwal',
         type: 'info',
@@ -267,9 +288,9 @@ function ComposerForm() {
           {/* Target Platforms Selector */}
           <div className="ui-card space-y-2.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide block">
+              <p id="platform-selection-label" className="text-xs font-semibold text-slate-700 uppercase tracking-wide block">
                 Pilih Saluran Publikasi
-              </label>
+              </p>
               {connectedAccounts.length > 0 && (
                 <span className="text-[11px] text-slate-500 font-medium">
                   {connectedAccounts.length} Akun Terhubung Aktif
@@ -277,14 +298,35 @@ function ComposerForm() {
               )}
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
-              {PLATFORMS.map((p) => {
+            {accountsLoading && (
+              <p className="text-xs text-slate-500" role="status">Memuat akun sosial terhubung...</p>
+            )}
+            {!accountsLoading && accountsError && (
+              <div className="rounded border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-800" role="alert">
+                <p><strong>Akun sosial gagal dimuat.</strong> {accountsError}</p>
+                <button type="button" className="ui-btn ui-btn-secondary mt-2" onClick={() => void loadAccounts()}>
+                  Coba Lagi
+                </button>
+              </div>
+            )}
+            {!accountsLoading && !accountsError && connectedAccounts.length === 0 && (
+              <div className="rounded border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800" role="status">
+                Belum ada akun sosial aktif. <Link href="/accounts" className="font-semibold underline">Hubungkan akun</Link> sebelum membuat postingan.
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby="platform-selection-label">
+              {PLATFORMS.filter((platform) =>
+                connectedAccounts.some((account) => account.platform === platform.id)
+              ).map((p) => {
                 const isSelected = selectedPlatforms.includes(p.id);
                 return (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => togglePlatform(p.id)}
+                    disabled={accountsLoading}
+                    aria-pressed={isSelected}
                     className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border transition ${
                       isSelected
                         ? 'bg-slate-900 text-white border-slate-900'
@@ -302,7 +344,7 @@ function ComposerForm() {
           {/* Master Caption Box */}
           <div className="ui-card space-y-2.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              <label htmlFor="composer-caption" className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
                 Konten Caption Utama
               </label>
 
@@ -331,6 +373,7 @@ function ComposerForm() {
             </div>
 
             <textarea
+              id="composer-caption"
               rows={6}
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
@@ -351,9 +394,11 @@ function ComposerForm() {
                       className="flex items-center gap-2 p-1.5 rounded border border-slate-200 bg-slate-50 text-xs text-slate-800"
                     >
                       {media.file_type === 'image' ? (
-                        <img
+                        <Image
                           src={media.thumbnail_url || media.file_url}
-                          alt={media.title}
+                          alt={media.title || 'Media terlampir'}
+                          width={24}
+                          height={24}
                           className="w-6 h-6 object-cover rounded"
                         />
                       ) : (
@@ -363,6 +408,7 @@ function ComposerForm() {
                       <button
                         type="button"
                         onClick={() => removeMedia(media.id)}
+                        aria-label={`Hapus media ${media.title || 'terlampir'}`}
                         className="text-slate-400 hover:text-rose-600 p-0.5"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -388,6 +434,7 @@ function ComposerForm() {
                 <button
                   type="button"
                   onClick={() => setShowFirstComment(!showFirstComment)}
+                  aria-expanded={showFirstComment}
                   className={`ui-btn text-xs ${
                     showFirstComment ? 'bg-slate-900 text-white' : 'ui-btn-secondary'
                   }`}
@@ -405,10 +452,11 @@ function ComposerForm() {
             {/* First Comment Box */}
             {showFirstComment && (
               <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                <label className="text-[11px] font-semibold text-slate-700 uppercase tracking-wide block">
+                <label htmlFor="composer-first-comment" className="text-[11px] font-semibold text-slate-700 uppercase tracking-wide block">
                   First Comment (Otomatis Diposting di Kolom Komentar):
                 </label>
                 <textarea
+                  id="composer-first-comment"
                   rows={2}
                   value={firstComment}
                   onChange={(e) => setFirstComment(e.target.value)}
@@ -422,10 +470,10 @@ function ComposerForm() {
           {/* Schedule Time Card with Smart Auto Placement Dropup/Dropdown */}
           <div className="ui-card space-y-2.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
                 Waktu Penjadwalan Tayang
-              </label>
-              <span className="text-[11px] text-slate-500 font-mono">Zona Waktu: WIB (UTC+7)</span>
+              </p>
+              <span className="text-[11px] text-slate-500 font-mono">Zona waktu mengikuti pengaturan workspace</span>
             </div>
 
             <DateTimePicker
@@ -532,9 +580,11 @@ function ComposerForm() {
                       Browser Anda tidak mendukung video HTML5.
                     </video>
                   ) : (
-                    <img
+                    <Image
                       src={attachedMedia[0].thumbnail_url || attachedMedia[0].file_url}
-                      alt={attachedMedia[0].title}
+                      alt={attachedMedia[0].title || 'Pratinjau media'}
+                      width={640}
+                      height={360}
                       className="max-h-64 w-auto max-w-full object-contain rounded mx-auto"
                     />
                   )}

@@ -1,9 +1,14 @@
+const path = require('path');
+
+const projectRoot = __dirname;
+const logDirectory = path.join(projectRoot, 'logs', 'pm2');
+
 module.exports = {
   apps: [
     {
       name: 'creative-backend',
-      cwd: './backend',
-      script: './venv/bin/gunicorn',
+      cwd: path.join(projectRoot, 'backend'),
+      script: path.join(projectRoot, 'backend', 'venv', 'bin', 'gunicorn'),
       args: 'config.wsgi:application --bind 127.0.0.1:8050 --workers 2 --threads 2 --timeout 120 --preload',
       interpreter: 'none',
       env: {
@@ -14,13 +19,13 @@ module.exports = {
       max_memory_restart: '400M',
       max_restarts: 10,
       restart_delay: 2000,
-      error_file: './logs/pm2/creative-backend-err.log',
-      out_file: './logs/pm2/creative-backend-out.log',
+      error_file: path.join(logDirectory, 'creative-backend-err.log'),
+      out_file: path.join(logDirectory, 'creative-backend-out.log'),
     },
     {
       name: 'creative-worker',
-      cwd: './backend',
-      script: './venv/bin/python',
+      cwd: path.join(projectRoot, 'backend'),
+      script: path.join(projectRoot, 'backend', 'venv', 'bin', 'python'),
       args: 'manage.py process_tasks --duration 0 --sleep 15',
       interpreter: 'none',
       env: {
@@ -31,13 +36,13 @@ module.exports = {
       max_memory_restart: '500M',
       max_restarts: 10,
       restart_delay: 2000,
-      error_file: './logs/pm2/creative-worker-err.log',
-      out_file: './logs/pm2/creative-worker-out.log',
+      error_file: path.join(logDirectory, 'creative-worker-err.log'),
+      out_file: path.join(logDirectory, 'creative-worker-out.log'),
     },
     {
       name: 'creative-frontend',
-      cwd: './frontend',
-      script: 'node_modules/next/dist/bin/next',
+      cwd: path.join(projectRoot, 'frontend'),
+      script: path.join(projectRoot, 'frontend', 'node_modules', 'next', 'dist', 'bin', 'next'),
       args: 'start -p 3050',
       interpreter: 'none',
       env: {
@@ -49,8 +54,8 @@ module.exports = {
       max_memory_restart: '600M',
       max_restarts: 10,
       restart_delay: 2000,
-      error_file: './logs/pm2/creative-frontend-err.log',
-      out_file: './logs/pm2/creative-frontend-out.log',
+      error_file: path.join(logDirectory, 'creative-frontend-err.log'),
+      out_file: path.join(logDirectory, 'creative-frontend-out.log'),
     },
   ],
 };

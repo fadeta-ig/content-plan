@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   AlertCircle,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,14 +30,16 @@ export default function LoginPage() {
 
     try {
       const res = await api.login({ email: email.trim(), password });
-      if (res && res.success) {
+      if (res?.success && res.requires_tos && res.accept_terms_url?.startsWith('/accounts/')) {
+        window.location.assign(res.accept_terms_url);
+      } else if (res && res.success) {
         router.push('/');
         router.refresh();
       } else {
         setError('Email atau kata sandi tidak sesuai.');
       }
-    } catch (err: any) {
-      setError(err.message || 'Email atau kata sandi tidak sesuai. Silakan coba lagi.');
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Email atau kata sandi tidak sesuai. Silakan coba lagi.'));
     } finally {
       setLoading(false);
     }
@@ -60,7 +62,7 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <div className="p-3 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 animate-in fade-in">
+          <div className="p-3 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 animate-in fade-in" role="alert" aria-live="assertive">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
@@ -68,12 +70,13 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin} className="space-y-3">
           <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <label htmlFor="login-email" className="text-xs font-semibold text-slate-700 block mb-1">
               Email Perusahaan:
             </label>
             <div className="relative">
               <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
+                id="login-email"
                 type="email"
                 required
                 autoComplete="email"
@@ -86,12 +89,13 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <label htmlFor="login-password" className="text-xs font-semibold text-slate-700 block mb-1">
               Kata Sandi:
             </label>
             <div className="relative">
               <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
+                id="login-password"
                 type="password"
                 required
                 autoComplete="current-password"

@@ -22,7 +22,7 @@ import uuid
 
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from ninja import Router
+from ninja import Router, Status
 from ninja.errors import HttpError
 
 from apps.api.limits import check_platform_quota, enforce_http_rate_limits
@@ -208,7 +208,9 @@ def create(request, payload: CreatePostRequest):
     except ValueError as exc:
         raise HttpError(422, str(exc)) from exc
     if disposition == "replay":
-        return replay_status, replay_body
+        if replay_status is None or replay_body is None:
+            raise RuntimeError("Completed idempotency replay is missing its stored response.")
+        return Status(replay_status, replay_body)
     if disposition == "in_flight":
         raise HttpError(
             409,
@@ -283,7 +285,7 @@ def create(request, payload: CreatePostRequest):
     except Exception:
         release_idempotent_claim(api_key=request.api_key, idempotency_key=idempotency_key)
         raise
-    return status_code, body
+    return Status(status_code, body)
 
 
 @router.get("/{post_id}", response=PostResponse, summary="Read a single post")

@@ -1,8 +1,6 @@
 """Tests for YouTubeProvider.get_post_analytics."""
 
-from datetime import datetime, timezone
-
-UTC = timezone.utc
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from providers.youtube import _ANALYTICS_VIDEO_FILTER_CHUNK, YouTubeProvider

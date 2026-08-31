@@ -15,7 +15,6 @@ from apps.notifications.engine import notify
 from apps.notifications.models import EventType
 from apps.social_accounts.models import SocialAccount
 from apps.workspaces.models import Workspace
-from providers import get_provider
 
 from .forms import (
     AssignForm,
@@ -34,6 +33,7 @@ from .models import (
     InternalNote,
     SavedReply,
 )
+from .services import InboxReplyDeliveryError, send_platform_reply
 
 logger = logging.getLogger(__name__)
 
@@ -220,27 +220,21 @@ def send_reply(request, workspace_id, message_id):
         return HttpResponse("Invalid reply.", status=400)
 
     body = form.cleaned_data["body"]
-    account = message.social_account
-    platform_reply_id = ""
-
-    # Attempt to post reply via provider
+    # Persist only after the platform confirms delivery.
     try:
-        from apps.publisher.engine import _resolve_publish_credentials
-
-        provider = get_provider(account.platform, _resolve_publish_credentials(account))
-        result = provider.reply_to_message(
-            access_token=account.oauth_access_token,
-            message_id=message.platform_message_id,
-            text=body,
-            extra=message.extra,
-        )
-        platform_reply_id = result.platform_message_id
+        platform_reply_id = send_platform_reply(message, body)
     except NotImplementedError:
-        logger.info("Provider %s does not support reply_to_message.", account.platform)
+        logger.info("Provider does not support reply_to_message for message %s.", message.id)
+        return HttpResponse("Platform ini belum mendukung pengiriman balasan.", status=501)
+    except InboxReplyDeliveryError as exc:
+        logger.warning("Reply delivery rejected for message %s: %s", message.id, exc)
+        return HttpResponse(str(exc), status=409)
     except (ConnectionError, TimeoutError, OSError) as exc:
         logger.exception("Network error sending reply for message %s: %s", message.id, exc)
+        return HttpResponse("Platform tidak dapat dihubungi. Balasan belum dikirim.", status=502)
     except Exception:
         logger.exception("Failed to send reply for message %s", message.id)
+        return HttpResponse("Platform menolak balasan. Balasan belum dikirim.", status=502)
 
     reply = InboxReply.objects.create(
         inbox_message=message,

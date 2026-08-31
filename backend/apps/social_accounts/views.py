@@ -302,7 +302,6 @@ def connect_platform_redirect(request):
     return redirect("social_accounts:connect", workspace_id=workspace.id)
 
 
-
 # ------------------------------------------------------------------
 # OAuth Callback
 # ------------------------------------------------------------------
@@ -788,41 +787,31 @@ def disconnect(request, workspace_id, account_id):
     """Disconnect a social account."""
     account = get_object_or_404(SocialAccount.objects.for_workspace(workspace_id), id=account_id)
 
-    # Try to revoke token
+    provider = None
     try:
         provider = _get_provider_for_platform(account.platform, request.org.id)
-        if account.oauth_access_token:
-            provider.revoke_token(account.oauth_access_token)
     except Exception:
-        logger.warning(
-            "Failed to revoke token for %s, proceeding with disconnect",
-            account,
-        )
-
-    # Delete posts that ONLY target this account (will be fully orphaned).
-    # Multi-platform posts keep their other PlatformPost targets via cascade.
-    from django.db.models import Count
-
-    from apps.composer.models import PlatformPost, Post
-
-    orphan_post_ids = list(
-        PlatformPost.objects.filter(social_account=account)
-        .values("post_id")
-        .annotate(total_platforms=Count("post__platform_posts"))
-        .filter(total_platforms=1)
-        .values_list("post_id", flat=True)
-    )
-    if orphan_post_ids:
-        Post.objects.filter(id__in=orphan_post_ids).delete()
+        logger.warning("Provider for %s could not be initialized during disconnect", account, exc_info=True)
 
     account_name = account.account_name or account.account_handle
-    account.delete()
+    from .services import disconnect_social_account
 
-    messages.success(request, f"Disconnected {account_name}.")
+    revocation_confirmed = disconnect_social_account(account, provider)
+    if revocation_confirmed:
+        messages.success(request, f"Disconnected {account_name} and revoked its platform token.")
+    else:
+        messages.warning(
+            request,
+            f"Disconnected {account_name} locally. Revoke the app from the platform settings because token revocation was not confirmed.",
+        )
 
     # HTMX partial response
     if request.headers.get("HX-Request"):
-        return render(request, "social_accounts/partials/_empty.html")
+        return render(
+            request,
+            "social_accounts/partials/_account_card.html",
+            {"account": account, "workspace_id": workspace_id},
+        )
 
     return redirect("social_accounts:list", workspace_id=workspace_id)
 

@@ -7,19 +7,61 @@ import {
   CalendarEvent,
   PostingSlot,
   KanbanColumn,
+  KanbanCard,
   InboxMessage,
   AnalyticsData,
   MediaItem,
+  MediaFolder,
   NotificationItem,
   TeamMember,
+  ShootingSession,
 } from './types';
 
 const API_BASE = '/api/v1/frontend';
+let csrfToken: string | null = null;
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+async function ensureCsrfToken(): Promise<string> {
+  if (csrfToken) return csrfToken;
+  const response = await fetch(`${API_BASE}/auth/csrf`, { credentials: 'include' });
+  if (!response.ok) {
+    throw new ApiError('Gagal menyiapkan perlindungan keamanan formulir. Muat ulang halaman.', response.status);
+  }
+  const data = (await response.json()) as { csrf_token: string };
+  csrfToken = data.csrf_token;
+  return csrfToken;
+}
+
+function toSearchParams(params?: Record<string, string | undefined>): string {
+  const search = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') search.set(key, value);
+  });
+  return search.toString();
+}
 
 async function fetcher<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const defaultHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+
+  const method = (options.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    defaultHeaders['X-CSRFToken'] = await ensureCsrfToken();
+  }
 
   const config: RequestInit = {
     ...options,
@@ -30,33 +72,33 @@ async function fetcher<T>(endpoint: string, options: RequestInit = {}): Promise<
     credentials: 'include',
   };
 
-  try {
-    const res = await fetch(`${API_BASE}${endpoint}`, config);
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.detail || errorData.message || `Request failed with status ${res.status}`);
-    }
-    return await res.json();
-  } catch (err: any) {
-    console.warn(`API Error [${endpoint}]:`, err.message);
-    throw err;
+  const res = await fetch(`${API_BASE}${endpoint}`, config);
+  if (!res.ok) {
+    const errorData = (await res.json().catch(() => ({}))) as { detail?: string; message?: string };
+    throw new ApiError(
+      errorData.detail || errorData.message || `Permintaan gagal dengan status ${res.status}.`,
+      res.status,
+    );
   }
+  return (await res.json()) as T;
 }
 
 export const api = {
   // Auth
   async login(payload: { email: string; password: string }) {
-    return fetcher<{ success: boolean; user: User }>('/auth/login', {
+    const result = await fetcher<{
+      success: boolean;
+      user?: User;
+      requires_tos?: boolean;
+      accept_terms_url?: string;
+    }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-  },
-
-  async register(payload: { email: string; name: string; password: string; workspace_name?: string }) {
-    return fetcher<{ success: boolean; user: User }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    // Django rotates the CSRF secret on login; fetch the new token before the
+    // next state-changing request.
+    csrfToken = null;
+    return result;
   },
 
   async getMe() {
@@ -64,7 +106,16 @@ export const api = {
   },
 
   async logout() {
-    return fetcher<{ success: boolean }>('/auth/logout', { method: 'POST' });
+    const result = await fetcher<{ success: boolean }>('/auth/logout', { method: 'POST' });
+    csrfToken = null;
+    return result;
+  },
+
+  async switchWorkspace(workspaceId: string) {
+    return fetcher<{ success: boolean; message: string; workspace_id: string }>('/auth/switch-workspace', {
+      method: 'POST',
+      body: JSON.stringify({ workspace_id: workspaceId }),
+    });
   },
 
   // Dashboard Overview
@@ -74,7 +125,7 @@ export const api = {
 
   // Posts & Composer
   async getPosts(params?: { status?: string; platform?: string; search?: string }) {
-    const query = new URLSearchParams(params as any).toString();
+    const query = toSearchParams(params);
     return fetcher<{ posts: Post[] }>(`/dashboard/posts${query ? `?${query}` : ''}`);
   },
 
@@ -109,7 +160,7 @@ export const api = {
 
   // Calendar
   async getCalendarEvents(params?: { start_date?: string; end_date?: string }) {
-    const query = new URLSearchParams(params as any).toString();
+    const query = toSearchParams(params);
     return fetcher<{ events: CalendarEvent[]; slots: PostingSlot[] }>(
       `/dashboard/calendar${query ? `?${query}` : ''}`
     );
@@ -121,7 +172,7 @@ export const api = {
   },
 
   async createIdea(payload: { workspace_id?: string; title: string; content?: string; status?: string }) {
-    return fetcher<{ success: boolean; idea: any }>('/dashboard/kanban/create', {
+    return fetcher<{ success: boolean; idea: KanbanCard }>('/dashboard/kanban/create', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -135,7 +186,7 @@ export const api = {
   },
 
   async updateIdea(ideaId: string, payload: { title?: string; content?: string; status?: string }) {
-    return fetcher<{ success: boolean; idea: any }>(`/dashboard/kanban/${ideaId}`, {
+    return fetcher<{ success: boolean; idea: KanbanCard }>(`/dashboard/kanban/${ideaId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
@@ -152,15 +203,8 @@ export const api = {
     return fetcher<{ accounts: SocialAccount[] }>('/dashboard/accounts');
   },
 
-  async createManualAccount(payload: { platform: string; account_name?: string; account_handle?: string }) {
-    return fetcher<{ success: boolean; account: SocialAccount }>('/dashboard/accounts/create-manual', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  },
-
   async disconnectAccount(accountId: string) {
-    return fetcher<{ success: boolean; message: string }>(`/dashboard/accounts/${accountId}`, {
+    return fetcher<{ success: boolean; message: string; revocation_confirmed: boolean }>(`/dashboard/accounts/${accountId}`, {
       method: 'DELETE',
     });
   },
@@ -174,12 +218,17 @@ export const api = {
 
   // Unified Inbox
   async getInboxMessages(params?: { status?: string; platform?: string }) {
-    const query = new URLSearchParams(params as any).toString();
+    const query = toSearchParams(params);
     return fetcher<{ messages: InboxMessage[] }>(`/dashboard/inbox${query ? `?${query}` : ''}`);
   },
 
   async replyInboxMessage(payload: { message_id: string; content: string }) {
-    return fetcher<{ success: boolean; reply_id: string; status: string }>('/dashboard/inbox/reply', {
+    return fetcher<{
+      success: boolean;
+      platform_reply_id: string;
+      status: InboxMessage['status'];
+      reply: InboxMessage['replies'][number];
+    }>('/dashboard/inbox/reply', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -192,7 +241,7 @@ export const api = {
 
   // Media Library
   async getMedia(folderId?: string) {
-    return fetcher<{ folders: any[]; assets: MediaItem[] }>(
+    return fetcher<{ folders: MediaFolder[]; assets: MediaItem[] }>(
       `/dashboard/media${folderId ? `?folder_id=${folderId}` : ''}`
     );
   },
@@ -203,12 +252,13 @@ export const api = {
       method: 'POST',
       body: formData,
       credentials: 'include',
+      headers: { 'X-CSRFToken': await ensureCsrfToken() },
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || err.detail || 'Gagal mengunggah file media.');
+      const err = (await res.json().catch(() => ({}))) as { detail?: string; message?: string };
+      throw new ApiError(err.message || err.detail || 'Gagal mengunggah file media.', res.status);
     }
-    return await res.json();
+    return (await res.json()) as { success: boolean; asset: MediaItem };
   },
 
   async deleteMedia(assetId: string) {
@@ -219,7 +269,10 @@ export const api = {
 
   // Team Members & Roles
   async getMembers() {
-    return fetcher<{ members: TeamMember[] }>('/dashboard/members');
+    return fetcher<{
+      members: TeamMember[];
+      capabilities: { can_manage_global_accounts: boolean };
+    }>('/dashboard/members');
   },
 
   async inviteMember(payload: { name: string; email: string; role?: string; password?: string }) {
@@ -308,12 +361,12 @@ export const api = {
 
   // Shooting Sessions (Production Planner)
   async getShootingSessions(params?: { status?: string; start_date?: string; end_date?: string }) {
-    const query = new URLSearchParams(params as any).toString();
-    return fetcher<{ sessions: any[] }>(`/dashboard/shooting-sessions${query ? `?${query}` : ''}`);
+    const query = toSearchParams(params);
+    return fetcher<{ sessions: ShootingSession[] }>(`/dashboard/shooting-sessions${query ? `?${query}` : ''}`);
   },
 
   async getShootingSessionDetail(sessionId: string) {
-    return fetcher<{ session: any }>(`/dashboard/shooting-sessions/${sessionId}`);
+    return fetcher<{ session: ShootingSession }>(`/dashboard/shooting-sessions/${sessionId}`);
   },
 
   async createShootingSession(payload: {
@@ -327,7 +380,7 @@ export const api = {
     equipment_checklist?: { item: string; checked: boolean }[];
     related_idea_id?: string | null;
   }) {
-    return fetcher<{ success: boolean; message: string; session: any }>('/dashboard/shooting-sessions', {
+    return fetcher<{ success: boolean; message: string; session: ShootingSession }>('/dashboard/shooting-sessions', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -344,7 +397,7 @@ export const api = {
     equipment_checklist?: { item: string; checked: boolean }[];
     related_idea_id?: string | null;
   }) {
-    return fetcher<{ success: boolean; message: string; session: any }>(`/dashboard/shooting-sessions/${sessionId}`, {
+    return fetcher<{ success: boolean; message: string; session: ShootingSession }>(`/dashboard/shooting-sessions/${sessionId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });

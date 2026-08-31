@@ -1,7 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { AlertTriangle, Trash2, Send, Clock, X, HelpCircle } from 'lucide-react';
+import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { AlertTriangle, Trash2, Send, X, HelpCircle } from 'lucide-react';
 
 interface ConfirmOptions {
   title: string;
@@ -22,8 +22,13 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
   const [loading, setLoading] = useState(false);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   const confirm = (opts: ConfirmOptions) => {
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
     setOptions(opts);
     setIsOpen(true);
   };
@@ -34,6 +39,46 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     setOptions(null);
   };
 
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    cancelButtonRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !loadingRef.current) {
+        setIsOpen(false);
+        setOptions(null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [isOpen]);
+
   const handleConfirm = async () => {
     if (!options) return;
     setLoading(true);
@@ -41,7 +86,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       await options.onConfirm();
       setIsOpen(false);
       setOptions(null);
-    } catch (e) {
+    } catch {
       // Handled in caller
     } finally {
       setLoading(false);
@@ -81,9 +126,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {isOpen && options && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-2xs z-[999] flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div
+            ref={dialogRef}
             className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150"
             role="dialog"
             aria-modal="true"
+            aria-labelledby="confirm-dialog-title"
+            aria-describedby="confirm-dialog-message"
           >
             {/* Header */}
             <div className="flex items-start justify-between gap-3">
@@ -100,7 +148,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                   {getIcon()}
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-900 tracking-tight leading-snug">
+                  <h3 id="confirm-dialog-title" className="text-sm font-semibold text-slate-900 tracking-tight leading-snug">
                     {options.title}
                   </h3>
                   <span className="text-[11px] text-slate-400 font-mono uppercase">
@@ -114,13 +162,14 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                 onClick={handleClose}
                 disabled={loading}
                 className="text-slate-400 hover:text-slate-600 p-1 transition"
+                aria-label="Tutup dialog konfirmasi"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Message Body */}
-            <div className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded border border-slate-200 font-sans">
+            <div id="confirm-dialog-message" className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded border border-slate-200 font-sans">
               {options.message}
             </div>
 
@@ -128,6 +177,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
+                ref={cancelButtonRef}
                 onClick={handleClose}
                 disabled={loading}
                 className="ui-btn ui-btn-secondary text-xs"

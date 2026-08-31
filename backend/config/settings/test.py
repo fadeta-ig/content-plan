@@ -24,6 +24,7 @@ STORAGE_BACKEND = "local"
 MEDIA_ROOT = BASE_DIR / "test_media"  # noqa: F405
 
 # Use simple static files storage in tests (no manifest/collectstatic needed)
+STATIC_ROOT = BASE_DIR / "test_staticfiles"  # noqa: F405
 STORAGES["staticfiles"] = {  # noqa: F405
     "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
 }
@@ -31,4 +32,3 @@ STORAGES["staticfiles"] = {  # noqa: F405
 DATABASES = {
     "default": env.db("DATABASE_URL", default="sqlite:///:memory:"),  # noqa: F405
 }
-

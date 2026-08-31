@@ -24,6 +24,19 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 
+function parsePickerDate(value: string): Date {
+  if (value) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const nextSlot = new Date();
+  nextSlot.setSeconds(0, 0);
+  const remainder = nextSlot.getMinutes() % 5;
+  nextSlot.setMinutes(nextSlot.getMinutes() + (remainder === 0 ? 5 : 5 - remainder));
+  return nextSlot;
+}
+
 export default function DateTimePicker({
   value,
   onChange,
@@ -35,8 +48,8 @@ export default function DateTimePicker({
   const [openUpward, setOpenUpward] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Parse initial date or default to now/August 2026
-  const initialDate = value ? new Date(value) : new Date(2026, 7, 19, 10, 0);
+  // Parse the current value, or start from the user's actual current time.
+  const initialDate = parsePickerDate(value);
   const [viewDate, setViewDate] = useState(
     new Date(initialDate.getFullYear(), initialDate.getMonth(), 1)
   );
@@ -49,6 +62,17 @@ export default function DateTimePicker({
   const [selectedMinute, setSelectedMinute] = useState(
     initialDate.getMinutes().toString().padStart(2, '0')
   );
+
+  useEffect(() => {
+    if (!value) return;
+    const date = parsePickerDate(value);
+    setViewDate(new Date(date.getFullYear(), date.getMonth(), 1));
+    setSelectedDay(date.getDate());
+    setSelectedMonth(date.getMonth());
+    setSelectedYear(date.getFullYear());
+    setSelectedHour(date.getHours().toString().padStart(2, '0'));
+    setSelectedMinute(date.getMinutes().toString().padStart(2, '0'));
+  }, [value]);
 
   // Auto-detect viewport boundary to open upward or downward
   useEffect(() => {
@@ -79,16 +103,35 @@ export default function DateTimePicker({
         setIsOpen(false);
       }
     }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setIsOpen(false);
+    }
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
     };
   }, [isOpen]);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const canViewPreviousMonth = new Date(year, month, 1) > currentMonthStart;
+  const selectedDateTime = new Date(
+    selectedYear,
+    selectedMonth,
+    selectedDay,
+    Number(selectedHour),
+    Number(selectedMinute)
+  );
+  const selectionIsPast = selectedDateTime.getTime() <= now.getTime();
+  const todayAfternoon = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 0);
+  const todayAfternoonHasPassed = todayAfternoon.getTime() <= now.getTime();
 
   const firstDayIndex = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -123,6 +166,7 @@ export default function DateTimePicker({
 
   const prevMonth = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!canViewPreviousMonth) return;
     setViewDate(new Date(year, month - 1, 1));
   };
 
@@ -143,6 +187,9 @@ export default function DateTimePicker({
       targetYear += 1;
     }
 
+    const targetDate = new Date(targetYear, targetMonth, day);
+    if (targetDate < todayStart) return;
+
     setSelectedDay(day);
     setSelectedMonth(targetMonth);
     setSelectedYear(targetYear);
@@ -153,6 +200,7 @@ export default function DateTimePicker({
   };
 
   const handleApply = () => {
+    if (selectionIsPast) return;
     const formattedMonth = (selectedMonth + 1).toString().padStart(2, '0');
     const formattedDay = selectedDay.toString().padStart(2, '0');
     onChange(`${selectedYear}-${formattedMonth}-${formattedDay}T${selectedHour}:${selectedMinute}`);
@@ -160,8 +208,8 @@ export default function DateTimePicker({
   };
 
   const handleSetPreset = (preset: 'today_afternoon' | 'tomorrow_morning' | 'tomorrow_evening') => {
-    const base = new Date(2026, 7, 19);
-    let targetDate = new Date(base);
+    const base = new Date();
+    const targetDate = new Date(base);
     let h = '10';
     let m = '00';
 
@@ -202,7 +250,7 @@ export default function DateTimePicker({
           const yr = d.getFullYear();
           const hours = d.getHours().toString().padStart(2, '0');
           const mins = d.getMinutes().toString().padStart(2, '0');
-          return `${dayName}, ${dateNum} ${mName} ${yr} • ${hours}:${mins} WIB`;
+          return `${dayName}, ${dateNum} ${mName} ${yr} • ${hours}:${mins}`;
         } catch {
           return value;
         }
@@ -215,6 +263,8 @@ export default function DateTimePicker({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         className="w-full bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-md px-3 py-2 text-xs text-left flex items-center justify-between transition group"
       >
         <div className="flex items-center gap-2 min-w-0">
@@ -229,6 +279,8 @@ export default function DateTimePicker({
       {/* Popover Calendar & Time Picker Panel with Smart Dropup / Dropdown */}
       {isOpen && (
         <div
+          role="dialog"
+          aria-label="Pilih tanggal dan waktu publikasi"
           className={`absolute left-0 bg-white border border-slate-200 rounded-lg p-3 z-50 w-[330px] shadow-2xl animate-in fade-in zoom-in-95 space-y-3 ${
             openUpward ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
           }`}
@@ -238,7 +290,9 @@ export default function DateTimePicker({
             <button
               type="button"
               onClick={() => handleSetPreset('today_afternoon')}
-              className="px-2 py-1 rounded bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-700 shrink-0"
+              disabled={todayAfternoonHasPassed}
+              title={todayAfternoonHasPassed ? 'Waktu ini sudah lewat' : undefined}
+              className="px-2 py-1 rounded bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-700 shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Sore Ini (17:00)
             </button>
@@ -267,13 +321,16 @@ export default function DateTimePicker({
               <button
                 type="button"
                 onClick={prevMonth}
-                className="p-1 rounded hover:bg-slate-100 text-slate-600 border border-slate-200 transition"
+                aria-label="Bulan sebelumnya"
+                disabled={!canViewPreviousMonth}
+                className="p-1 rounded hover:bg-slate-100 text-slate-600 border border-slate-200 transition disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={nextMonth}
+                aria-label="Bulan berikutnya"
                 className="p-1 rounded hover:bg-slate-100 text-slate-600 border border-slate-200 transition"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -291,6 +348,8 @@ export default function DateTimePicker({
           {/* Calendar Day Cells Grid */}
           <div className="grid grid-cols-7 gap-1">
             {calendarDays.map((item, index) => {
+              const targetDate = new Date(year, month + item.monthOffset, item.day);
+              const isPastDay = targetDate < todayStart;
               const isSelected =
                 item.isCurrentMonth &&
                 item.day === selectedDay &&
@@ -302,9 +361,19 @@ export default function DateTimePicker({
                   key={`day-${index}`}
                   type="button"
                   onClick={() => handleSelectDay(item.day, item.monthOffset)}
+                  disabled={isPastDay}
+                  aria-pressed={isSelected}
+                  aria-label={targetDate.toLocaleDateString('id-ID', {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  })}
                   className={`h-7 rounded text-xs font-medium flex items-center justify-center transition ${
                     isSelected
                       ? 'bg-slate-900 text-white font-semibold shadow-sm'
+                      : isPastDay
+                      ? 'text-slate-300 cursor-not-allowed opacity-50'
                       : item.isCurrentMonth
                       ? 'text-slate-800 hover:bg-slate-100'
                       : 'text-slate-300 hover:bg-slate-50'
@@ -325,6 +394,7 @@ export default function DateTimePicker({
                 {/* Hour selector */}
                 <select
                   value={selectedHour}
+                  aria-label="Jam publikasi"
                   onChange={(e) => setSelectedHour(e.target.value)}
                   className="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400 font-semibold"
                 >
@@ -341,6 +411,7 @@ export default function DateTimePicker({
                 {/* Minute selector */}
                 <select
                   value={selectedMinute}
+                  aria-label="Menit publikasi"
                   onChange={(e) => setSelectedMinute(e.target.value)}
                   className="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400 font-semibold"
                 >
@@ -352,7 +423,7 @@ export default function DateTimePicker({
                     )
                   )}
                 </select>
-                <span className="text-[10px] text-slate-400 font-medium ml-0.5">WIB</span>
+                <span className="text-[10px] text-slate-400 font-medium ml-0.5">waktu workspace</span>
               </div>
             </div>
 
@@ -360,12 +431,19 @@ export default function DateTimePicker({
             <button
               type="button"
               onClick={handleApply}
-              className="ui-btn ui-btn-primary text-[11px] py-1 px-2.5"
+              disabled={selectionIsPast}
+              title={selectionIsPast ? 'Pilih tanggal dan waktu yang belum lewat' : undefined}
+              className="ui-btn ui-btn-primary text-[11px] py-1 px-2.5 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Check className="w-3 h-3" />
               <span>Pilih</span>
             </button>
           </div>
+          {selectionIsPast && (
+            <p className="text-[10px] text-rose-600" role="alert">
+              Pilih tanggal dan waktu yang belum lewat.
+            </p>
+          )}
         </div>
       )}
     </div>

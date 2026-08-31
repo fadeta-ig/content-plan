@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Plus,
 } from 'lucide-react';
 import { KanbanCard } from '@/lib/types';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 
 interface CreateIdeaModalProps {
@@ -25,18 +25,54 @@ export default function CreateIdeaModal({
   const [content, setContent] = useState('');
   const [status, setStatus] = useState('unassigned');
   const [creating, setCreating] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const creatingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    creatingRef.current = creating;
+  }, [creating]);
 
   // Keyboard accessibility: Close on Escape
   useEffect(() => {
     if (!isOpen) return;
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    titleInputRef.current?.focus();
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
+      if (e.key === 'Escape' && !creatingRef.current) {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -68,8 +104,8 @@ export default function CreateIdeaModal({
       setContent('');
       setStatus('unassigned');
       onSuccess(newCard, status || 'unassigned');
-    } catch (err: any) {
-      toast.error('Gagal Menyimpan Ide', err.message || 'Terjadi kesalahan saat menyimpan ide.');
+    } catch (error: unknown) {
+      toast.error('Gagal Menyimpan Ide', getErrorMessage(error, 'Terjadi kesalahan saat menyimpan ide.'));
     } finally {
       setCreating(false);
     }
@@ -82,20 +118,28 @@ export default function CreateIdeaModal({
       }}
       className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
     >
-      <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-idea-title"
+        className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+      >
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-blue-600/10 text-blue-600 flex items-center justify-center border border-blue-200/60">
               <Plus className="w-4 h-4" />
             </div>
-            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+            <h3 id="create-idea-title" className="text-xs font-bold text-slate-900 uppercase tracking-wide">
               Tambah Ide Konten Baru
             </h3>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Tutup formulir tambah ide"
             className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition"
           >
             <X className="w-4 h-4" />
@@ -106,25 +150,27 @@ export default function CreateIdeaModal({
         <form onSubmit={handleSubmit}>
           <div className="p-5 space-y-3.5 max-h-[75vh] overflow-y-auto">
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <label htmlFor="idea-title" className="text-xs font-semibold text-slate-700 block mb-1">
                 Judul Ide / Topik Konten <span className="text-rose-500">*</span>:
               </label>
               <input
+                ref={titleInputRef}
                 type="text"
+                id="idea-title"
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Contoh: Ngobrol Santai: Cerita di Balik Layar"
                 className="ui-input text-xs"
-                autoFocus
               />
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <label htmlFor="idea-content" className="text-xs font-semibold text-slate-700 block mb-1">
                 Naskah Brief / Rundown Konsep:
               </label>
               <textarea
+                id="idea-content"
                 rows={7}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
@@ -134,10 +180,11 @@ export default function CreateIdeaModal({
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <label htmlFor="idea-status" className="text-xs font-semibold text-slate-700 block mb-1">
                 Tahap Awal Kanban:
               </label>
               <select
+                id="idea-status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 className="ui-input text-xs"

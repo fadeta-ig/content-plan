@@ -1,25 +1,35 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  Users,
   Eye,
   Calendar,
   Share2,
-  ArrowUpRight,
   Plus,
   Clock,
   CheckCircle2,
   ChevronRight,
   TrendingUp,
   Trash2,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, getErrorMessage } from '@/lib/api';
 import { OverviewMetrics, SocialAccount } from '@/lib/types';
 import SocialIcon from '@/components/ui/SocialIcon';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
+
+const POST_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  draft: { label: 'Draft', className: 'bg-slate-50 text-slate-700 border-slate-200' },
+  pending_review: { label: 'Menunggu Review', className: 'bg-amber-50 text-amber-800 border-amber-200' },
+  pending_client: { label: 'Menunggu Klien', className: 'bg-amber-50 text-amber-800 border-amber-200' },
+  publishing: { label: 'Diproses', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+  scheduled: { label: 'Terjadwal', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+  published: { label: 'Terbit', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  failed: { label: 'Gagal', className: 'bg-rose-50 text-rose-700 border-rose-200' },
+};
 
 export default function OverviewDashboardPage() {
   const toast = useToast();
@@ -27,56 +37,30 @@ export default function OverviewDashboardPage() {
   const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [overviewData, accountsData] = await Promise.all([
+        api.getOverview(),
+        api.getSocialAccounts(),
+      ]);
+      setMetrics(overviewData);
+      setAccounts(accountsData.accounts || []);
+    } catch (error: unknown) {
+      setMetrics(null);
+      setAccounts([]);
+      setLoadError(getErrorMessage(error, 'Ringkasan dashboard tidak dapat dimuat. Periksa koneksi lalu coba lagi.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [overviewData, accountsData] = await Promise.all([
-          api.getOverview().catch(() => null),
-          api.getSocialAccounts().catch(() => ({ accounts: [] })),
-        ]);
-
-        if (overviewData) {
-          setMetrics(overviewData);
-        } else {
-          setMetrics({
-            total_posts: 0,
-            scheduled_posts: 0,
-            published_posts: 0,
-            failed_posts: 0,
-            connected_accounts_count: 0,
-            pending_approvals_count: 0,
-            inbox_unread_count: 0,
-            total_reach: 0,
-            total_engagement: 0,
-            engagement_rate: 0.0,
-            recent_posts: [],
-          });
-        }
-
-        if (accountsData.accounts) {
-          setAccounts(accountsData.accounts);
-        }
-      } catch (err) {
-        setMetrics({
-          total_posts: 0,
-          scheduled_posts: 0,
-          published_posts: 0,
-          failed_posts: 0,
-          connected_accounts_count: 0,
-          pending_approvals_count: 0,
-          inbox_unread_count: 0,
-          total_reach: 0,
-          total_engagement: 0,
-          engagement_rate: 0.0,
-          recent_posts: [],
-        });
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
-  }, []);
+    void loadData();
+  }, [loadData]);
 
   return (
     <div className="space-y-4">
@@ -108,6 +92,19 @@ export default function OverviewDashboardPage() {
           </Link>
         </div>
       </div>
+
+      {loadError && (
+        <div className="ui-card border-rose-200 bg-rose-50 text-rose-800 p-3 flex items-center justify-between gap-3" role="alert">
+          <span className="text-xs flex items-start gap-2"><AlertCircle className="w-4 h-4 shrink-0" />{loadError}</span>
+          <button type="button" className="ui-btn ui-btn-secondary shrink-0" onClick={() => void loadData()}>
+            <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
+          </button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="ui-card py-8 text-center text-xs text-slate-500" role="status">Memuat ringkasan workspace...</div>
+      )}
 
       {/* KPI Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -186,7 +183,7 @@ export default function OverviewDashboardPage() {
               {accounts.length}
             </span>
             <span className="text-[11px] text-slate-500 block mt-0.5">
-              Enkripsi token status: Aktif
+              Hanya menghitung koneksi berstatus aktif
             </span>
           </div>
         </div>
@@ -216,7 +213,9 @@ export default function OverviewDashboardPage() {
 
           <div className="divide-y divide-slate-100">
             {metrics?.recent_posts && metrics.recent_posts.length > 0 ? (
-              metrics.recent_posts.map((post) => (
+              metrics.recent_posts.map((post) => {
+                const statusConfig = POST_STATUS_CONFIG[post.status] ?? POST_STATUS_CONFIG.draft;
+                return (
                 <div key={post.id} className="py-2.5 flex items-start justify-between gap-3 text-xs">
                   <div className="space-y-1">
                     <p className="font-semibold text-slate-900 line-clamp-1">{post.caption}</p>
@@ -240,16 +239,13 @@ export default function OverviewDashboardPage() {
 
                   <div className="flex items-center gap-2 shrink-0">
                     <span
-                      className={`ui-badge shrink-0 ${
-                        post.status === 'published'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'bg-blue-50 text-blue-700 border-blue-200'
-                      }`}
+                      className={`ui-badge shrink-0 ${statusConfig.className}`}
                     >
-                      {post.status === 'published' ? 'Terbit' : 'Terjadwal'}
+                      {statusConfig.label}
                     </span>
 
                     <button
+                      type="button"
                       onClick={() => {
                         confirm({
                           title: 'Hapus Postingan?',
@@ -269,20 +265,22 @@ export default function OverviewDashboardPage() {
                                   : prev
                               );
                               toast.warning('Postingan Dihapus', 'Konten berhasil dihapus dari database.');
-                            } catch (e: any) {
-                              toast.error('Gagal Menghapus', e.message || 'Gagal menghapus postingan.');
+                            } catch (error: unknown) {
+                              toast.error('Gagal Menghapus', getErrorMessage(error, 'Gagal menghapus postingan.'));
                             }
                           },
                         });
                       }}
                       title="Hapus Postingan"
+                      aria-label={`Hapus postingan ${post.caption.slice(0, 40)}`}
                       className="text-slate-300 hover:text-rose-600 p-1 transition"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
-              ))
+                );
+              })
             ) : (
               <div className="py-12 text-center text-xs text-slate-400 space-y-2">
                 <Clock className="w-6 h-6 text-slate-300 mx-auto" />
@@ -339,10 +337,10 @@ export default function OverviewDashboardPage() {
           <div className="p-3 rounded-lg border border-slate-200 bg-white space-y-1">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Sistem Siap Produksi</span>
+              <span>Isolasi Workspace Aktif</span>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Seluruh modul terhubung langsung ke database MySQL dan siap dideploy ke server.
+              Data dashboard dan operasi anggota dibatasi pada workspace yang sedang aktif.
             </p>
           </div>
         </div>

@@ -11,8 +11,10 @@ Models:
     CSVImportJob - Tracks bulk CSV import jobs.
 """
 
+from __future__ import annotations
+
 import uuid
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from django.conf import settings
@@ -23,13 +25,12 @@ from apps.common.managers import WorkspaceScopedManager
 from apps.common.validators import validate_hex_color
 
 if TYPE_CHECKING:
-    from django.db.models.manager import RelatedManager
+    from django.db.models.manager import Manager
+
     from apps.analytics.models import PostInsightsSnapshot
     from apps.approvals.models import ApprovalAction, ApprovalReminder, PostComment
     from apps.calendar.models import PostingSlot
     from apps.publisher.models import PublishLog
-
-
 
 
 class ContentCategory(models.Model):
@@ -187,7 +188,7 @@ class Idea(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        media_attachments: RelatedManager[IdeaMedia]
+        media_attachments: Manager[IdeaMedia]
 
     objects = WorkspaceScopedManager()
 
@@ -282,15 +283,15 @@ class Post(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        platform_posts: RelatedManager[PlatformPost]
-        media_attachments: RelatedManager[PostMedia]
-        versions: RelatedManager[PostVersion]
-        approval_actions: RelatedManager[ApprovalAction]
-        comments: RelatedManager[PostComment]
-        approval_reminders: RelatedManager[ApprovalReminder]
-        insights_snapshots: RelatedManager[PostInsightsSnapshot]
-        posting_slots: RelatedManager[PostingSlot]
-        source_idea: Optional[Idea]
+        platform_posts: Manager[PlatformPost]
+        media_attachments: Manager[PostMedia]
+        versions: Manager[PostVersion]
+        approval_actions: Manager[ApprovalAction]
+        comments: Manager[PostComment]
+        approval_reminders: Manager[ApprovalReminder]
+        insights_snapshots: Manager[PostInsightsSnapshot]
+        posting_slots: Manager[PostingSlot]
+        source_idea: Idea | None
 
     objects = WorkspaceScopedManager()
 
@@ -472,8 +473,8 @@ class PlatformPost(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        publish_logs: RelatedManager[PublishLog]
-        approval_actions: RelatedManager[ApprovalAction]
+        publish_logs: Manager[PublishLog]
+        approval_actions: Manager[ApprovalAction]
 
     class Meta:
         db_table = "composer_platform_post"

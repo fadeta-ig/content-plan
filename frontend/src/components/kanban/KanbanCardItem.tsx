@@ -39,21 +39,24 @@ export default function KanbanCardItem({
     >
       {/* Top Bar: Drag Handle, Title & Action buttons */}
       <div className="flex items-start justify-between gap-1.5">
-        <div
+        <button
+          type="button"
           onClick={() => onOpenPreview(card, columnId)}
-          className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer"
+          className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer text-left"
+          aria-label={`Buka pratinjau ${card.title}`}
         >
           <GripVertical className="w-3 h-3 text-slate-300 shrink-0 opacity-0 group-hover:opacity-100 transition" />
           <h4 className="font-semibold text-slate-900 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">
             {card.title}
           </h4>
-        </div>
+        </button>
 
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition shrink-0">
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition shrink-0">
           <button
             type="button"
             onClick={() => onOpenPreview(card, columnId)}
             title="Pratinjau Ide"
+            aria-label={`Pratinjau ide ${card.title}`}
             className="text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-1 rounded transition"
           >
             <Eye className="w-3.5 h-3.5" />
@@ -62,6 +65,7 @@ export default function KanbanCardItem({
             type="button"
             onClick={() => onDelete(card.id, card.title)}
             title="Hapus Ide"
+            aria-label={`Hapus ide ${card.title}`}
             className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1 rounded transition"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -71,10 +75,7 @@ export default function KanbanCardItem({
 
       {/* Brief Snippet */}
       {card.content && (
-        <p
-          onClick={() => onOpenPreview(card, columnId)}
-          className="text-slate-500 text-[11px] leading-relaxed line-clamp-2 font-sans cursor-pointer hover:text-slate-700 transition"
-        >
+        <p className="text-slate-500 text-[11px] leading-relaxed line-clamp-2 font-sans">
           {card.content}
         </p>
       )}

@@ -1,20 +1,19 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import Image from 'next/image';
 import {
   Image as ImageIcon,
   Upload,
-  FolderPlus,
   Trash2,
   Copy,
   Check,
   Video,
-  Eye,
-  Plus,
-  X,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { MediaItem } from '@/lib/types';
+import { MediaFolder, MediaItem } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 
@@ -22,12 +21,16 @@ export default function MediaLibraryPage() {
   const toast = useToast();
   const { confirm } = useConfirm();
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
-  const [folders, setFolders] = useState<any[]>([]);
+  const [folders, setFolders] = useState<MediaFolder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
-  const loadMedia = async () => {
+  const loadMedia = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
     try {
       const data = await api.getMedia(selectedFolder || undefined);
       if (data.assets) {
@@ -36,14 +39,21 @@ export default function MediaLibraryPage() {
       if (data.folders) {
         setFolders(data.folders);
       }
-    } catch (err) {
+    } catch (error) {
       setMediaItems([]);
+      setLoadError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Pustaka media tidak dapat dimuat. Periksa koneksi lalu coba lagi.'
+      );
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [selectedFolder]);
 
   useEffect(() => {
-    loadMedia();
-  }, [selectedFolder]);
+    void loadMedia();
+  }, [loadMedia]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -60,20 +70,16 @@ export default function MediaLibraryPage() {
         setMediaItems((prev) => [data.asset, ...prev]);
         toast.success('Media Berhasil Diunggah', `${file.name} telah disimpan ke media library.`);
       }
-    } catch (err) {
-      const newItem: MediaItem = {
-        id: `local-${Date.now()}`,
-        title: file.name,
-        file_url: URL.createObjectURL(file),
-        thumbnail_url: URL.createObjectURL(file),
-        file_type: file.type.includes('video') ? 'video' : 'image',
-        file_size: file.size,
-        created_at: 'Hari Ini',
-      };
-      setMediaItems((prev) => [newItem, ...prev]);
-      toast.success('Media Disimpan', `${file.name} telah ditambahkan.`);
+    } catch (error) {
+      toast.error(
+        'Unggah Media Gagal',
+        error instanceof Error && error.message
+          ? error.message
+          : `${file.name} belum tersimpan. Periksa format, ukuran, dan koneksi lalu coba lagi.`
+      );
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -86,20 +92,34 @@ export default function MediaLibraryPage() {
       onConfirm: async () => {
         try {
           await api.deleteMedia(id);
-        } catch (e) {
-          // Local fallback
+          setMediaItems((prev) => prev.filter((m) => m.id !== id));
+          toast.warning('Berkas Dihapus', `Media "${title}" telah dihapus dari pustaka.`);
+        } catch (error) {
+          toast.error(
+            'Gagal Menghapus Berkas',
+            error instanceof Error && error.message
+              ? error.message
+              : `Media "${title}" belum dihapus. Silakan coba kembali.`
+          );
+          throw error;
         }
-        setMediaItems((prev) => prev.filter((m) => m.id !== id));
-        toast.warning('Berkas Dihapus', `Media "${title}" telah dihapus dari pustaka.`);
       },
     });
   };
 
-  const copyUrl = (id: string, url: string) => {
-    navigator.clipboard.writeText(url);
-    setCopiedId(id);
-    toast.info('Tautan Disalin', 'URL publik media telah disalin ke clipboard.');
-    setTimeout(() => setCopiedId(null), 2000);
+  const copyUrl = async (id: string, url: string) => {
+    if (!url) {
+      toast.error('URL Tidak Tersedia', 'Berkas ini belum memiliki URL publik yang dapat disalin.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(id);
+      toast.info('Tautan Disalin', 'URL publik media telah disalin ke clipboard.');
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error('Gagal Menyalin URL', 'Browser menolak akses clipboard. Salin tautan dari pratinjau berkas.');
+    }
   };
 
   return (
@@ -133,6 +153,7 @@ export default function MediaLibraryPage() {
       {/* Folders Filter Bar */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         <button
+          type="button"
           onClick={() => setSelectedFolder(null)}
           className={`px-3 py-1.5 rounded text-xs font-medium border transition ${
             selectedFolder === null
@@ -140,10 +161,11 @@ export default function MediaLibraryPage() {
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
-          Semua Berkas ({mediaItems.length})
+          Semua Berkas
         </button>
         {folders.map((f) => (
           <button
+            type="button"
             key={f.id}
             onClick={() => setSelectedFolder(f.id)}
             className={`px-3 py-1.5 rounded text-xs font-medium border transition ${
@@ -158,7 +180,22 @@ export default function MediaLibraryPage() {
       </div>
 
       {/* Media Grid */}
-      {mediaItems.length > 0 ? (
+      {loading ? (
+        <div className="ui-card p-12 text-center text-xs text-slate-500" role="status">
+          Memuat pustaka media...
+        </div>
+      ) : loadError ? (
+        <div className="ui-card p-10 text-center space-y-3" role="alert">
+          <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
+          <div>
+            <h3 className="text-xs font-semibold text-slate-800">Pustaka media gagal dimuat</h3>
+            <p className="text-[11px] text-slate-500 mt-1">{loadError}</p>
+          </div>
+          <button type="button" className="ui-btn ui-btn-secondary" onClick={loadMedia}>
+            <RefreshCw className="w-3.5 h-3.5" /> Coba Lagi
+          </button>
+        </div>
+      ) : mediaItems.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {mediaItems.map((item) => (
             <div
@@ -168,9 +205,11 @@ export default function MediaLibraryPage() {
               {/* Thumbnail Box */}
               <div className="aspect-square rounded bg-slate-100 border border-slate-200 overflow-hidden relative flex items-center justify-center">
                 {item.file_type === 'image' && item.file_url ? (
-                  <img
+                  <Image
                     src={item.thumbnail_url || item.file_url}
-                    alt={item.title}
+                    alt={item.title || 'Media pustaka'}
+                    fill
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw"
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -196,6 +235,7 @@ export default function MediaLibraryPage() {
               {/* Action Bar */}
               <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between">
                 <button
+                  type="button"
                   onClick={() => copyUrl(item.id, item.file_url || '')}
                   className="text-[10px] font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1"
                 >
@@ -213,8 +253,9 @@ export default function MediaLibraryPage() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => handleDeleteMedia(item.id, item.title || 'Berkas Media')}
-                  aria-label="Hapus Media"
+                  aria-label={`Hapus media ${item.title || 'tanpa judul'}`}
                   className="text-slate-400 hover:text-rose-600 p-0.5 transition"
                   title="Hapus Berkas Media"
                 >
