@@ -171,7 +171,9 @@ export default function AccountsPage() {
         `Akun ${res.account.account_name} (${res.account.account_handle}) kini aktif di workspace.`
       );
       setAccounts((prev) => {
-        const filtered = prev.filter((a) => a.id !== res.account.id && a.platform !== res.account.platform);
+        const filtered = prev.filter(
+          (a) => a.id !== res.account.id && a.account_handle.toLowerCase() !== res.account.account_handle.toLowerCase()
+        );
         return [res.account, ...filtered];
       });
       setSelectedPlatformToConnect(null);
@@ -322,7 +324,8 @@ export default function AccountsPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
           {PLATFORM_LIST.map((p) => {
-            const isAlreadyConnected = accounts.some((a) => a.platform === p.id);
+            const platformAccounts = accounts.filter((a) => a.platform === p.id);
+            const count = platformAccounts.length;
             return (
               <div
                 key={p.id}
@@ -333,7 +336,14 @@ export default function AccountsPage() {
                     <SocialIcon platform={p.id} size={16} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-semibold text-slate-900 leading-tight">{p.name}</h4>
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="text-xs font-semibold text-slate-900 leading-tight">{p.name}</h4>
+                      {count > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold leading-none">
+                          {count} Akun
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{p.description}</p>
                   </div>
                 </div>
@@ -342,17 +352,18 @@ export default function AccountsPage() {
                   type="button"
                   onClick={() => {
                     setSelectedPlatformToConnect(p);
-                    setAccountNameInput(`PT Wijaya Inovasi Gemilang (${p.name})`);
-                    setAccountHandleInput(`@wijaya.${p.id}`);
+                    const defaultSuffix = count > 0 ? ` ${count + 1}` : '';
+                    const handleSuffix = count > 0 ? `_${count + 1}` : '';
+                    setAccountNameInput(`PT Wijaya Inovasi Gemilang (${p.name}${defaultSuffix})`);
+                    setAccountHandleInput(`@wijaya.${p.id}${handleSuffix}`);
                     setFollowerCountInput('0');
                     setConnectMode('manual');
                   }}
                   className="ui-btn ui-btn-secondary text-[11px] py-1 px-2 shrink-0"
-                  disabled={isAlreadyConnected}
-                  aria-label={`${isAlreadyConnected ? 'Sudah terhubung ke' : 'Hubungkan'} ${p.name}`}
+                  aria-label={`${count > 0 ? 'Tambah akun lagi untuk' : 'Hubungkan'} ${p.name}`}
                 >
-                  {isAlreadyConnected ? <CheckCircle2 className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                  <span>{isAlreadyConnected ? 'Terhubung' : 'Hubungkan'}</span>
+                  <Plus className="w-3 h-3" />
+                  <span>{count > 0 ? '+ Tambah Akun' : 'Hubungkan'}</span>
                 </button>
               </div>
             );
@@ -457,6 +468,9 @@ export default function AccountsPage() {
                     placeholder={`@wijaya.${selectedPlatformToConnect.id}`}
                     className="ui-input text-xs"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Gunakan handle unik untuk masing-masing akun (contoh: @brand_utama, @brand_lifestyle).
+                  </p>
                 </div>
 
                 <div>

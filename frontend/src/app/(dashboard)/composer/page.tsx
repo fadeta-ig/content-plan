@@ -49,6 +49,7 @@ function ComposerForm() {
   const { confirm } = useConfirm();
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [caption, setCaption] = useState('');
   const [firstComment, setFirstComment] = useState('');
   const [showFirstComment, setShowFirstComment] = useState(false);
@@ -75,6 +76,7 @@ function ComposerForm() {
       if (!postIdParam) {
         const availablePlatforms = Array.from(new Set(accounts.map((account) => account.platform)));
         setSelectedPlatforms(availablePlatforms);
+        setSelectedAccountIds(accounts.map((a) => a.id));
         if (availablePlatforms[0]) {
           setActivePreviewTab(availablePlatforms[0]);
         }
@@ -82,6 +84,7 @@ function ComposerForm() {
     } catch (error) {
       setConnectedAccounts([]);
       setSelectedPlatforms([]);
+      setSelectedAccountIds([]);
       setAccountsError(
         error instanceof Error && error.message
           ? error.message
@@ -130,7 +133,9 @@ function ComposerForm() {
           }
           if (res.post.targets && res.post.targets.length > 0) {
             const plats = Array.from(new Set(res.post.targets.map((t) => t.platform)));
+            const accIds = res.post.targets.map((t) => t.id).filter(Boolean);
             setSelectedPlatforms(plats);
+            if (accIds.length > 0) setSelectedAccountIds(accIds);
             if (plats[0]) setActivePreviewTab(plats[0]);
           }
           toast.info('Mode Edit Aktif', 'Data postingan berhasil dimuat dari kalender.');
@@ -183,10 +188,20 @@ function ComposerForm() {
 
   const togglePlatform = (id: string) => {
     setSelectedPlatforms((prev) => {
-      const next = prev.includes(id) ? (prev.length > 1 ? prev.filter((p) => p !== id) : prev) : [...prev, id];
+      const willSelect = !prev.includes(id);
+      const next = willSelect ? [...prev, id] : (prev.length > 1 ? prev.filter((p) => p !== id) : prev);
       if (!next.includes(activePreviewTab)) {
         setActivePreviewTab(next[0] || 'instagram');
       }
+      setSelectedAccountIds((prevAccIds) => {
+        const platformAccountIds = connectedAccounts.filter((a) => a.platform === id).map((a) => a.id);
+        if (willSelect) {
+          return Array.from(new Set([...prevAccIds, ...platformAccountIds]));
+        } else {
+          const remaining = prevAccIds.filter((accId) => !platformAccountIds.includes(accId));
+          return remaining.length > 0 ? remaining : prevAccIds;
+        }
+      });
       return next;
     });
   };
@@ -210,7 +225,7 @@ function ComposerForm() {
       await api.createPost({
         post_id: editingPostId || undefined,
         master_caption: caption,
-        target_account_ids: selectedPlatforms,
+        target_account_ids: selectedAccountIds.length > 0 ? selectedAccountIds : selectedPlatforms,
         scheduled_at: postNow ? undefined : scheduledAt,
         first_comment: showFirstComment ? firstComment : undefined,
         media_ids: attachedMedia.map((m) => m.id),
@@ -390,6 +405,70 @@ function ComposerForm() {
                 );
               })}
             </div>
+
+            {/* Specific Account Selection Chips for Multi-Account Setup */}
+            {connectedAccounts.length > 0 && selectedPlatforms.length > 0 && (
+              <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    Target Akun Spesifik ({selectedAccountIds.length} dipilih):
+                  </span>
+                  {connectedAccounts.filter((acc) => selectedPlatforms.includes(acc.platform)).length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allAvailableIds = connectedAccounts
+                          .filter((acc) => selectedPlatforms.includes(acc.platform))
+                          .map((acc) => acc.id);
+                        const isAllSelected = allAvailableIds.every((id) => selectedAccountIds.includes(id));
+                        setSelectedAccountIds(
+                          isAllSelected
+                            ? [allAvailableIds[0]] // sisakan minimal 1
+                            : Array.from(new Set([...selectedAccountIds, ...allAvailableIds]))
+                        );
+                      }}
+                      className="text-[10px] text-blue-600 hover:underline font-semibold"
+                    >
+                      Pilih Semua / Reset
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {connectedAccounts
+                    .filter((acc) => selectedPlatforms.includes(acc.platform))
+                    .map((acc) => {
+                      const isAccSelected = selectedAccountIds.includes(acc.id);
+                      return (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAccountIds((prev) =>
+                              prev.includes(acc.id)
+                                ? (prev.length > 1 ? prev.filter((id) => id !== acc.id) : prev)
+                                : [...prev, acc.id]
+                            );
+                          }}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition ${
+                            isAccSelected
+                              ? 'bg-blue-50 text-blue-700 border-blue-300 font-semibold shadow-2xs'
+                              : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <SocialIcon platform={acc.platform} size={11} />
+                          <span>{acc.account_handle || acc.account_name}</span>
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isAccSelected ? 'bg-blue-600' : 'bg-slate-300'
+                            }`}
+                          />
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Idea / Brief Linker Box */}
