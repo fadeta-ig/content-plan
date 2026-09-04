@@ -377,6 +377,17 @@ export default function CalendarPage() {
 
         {/* Month Navigation & Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          {/* Explicit "Hari Ini" (Today Button) */}
+          <button
+            type="button"
+            onClick={goToToday}
+            className="ui-btn ui-btn-secondary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5 shadow-2xs"
+            title="Kembali ke Tanggal Hari Ini"
+          >
+            <CalendarIcon className="w-3.5 h-3.5 text-slate-600" />
+            <span>Hari Ini</span>
+          </button>
+
           <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 p-0.5">
             <button
               type="button"
@@ -386,13 +397,9 @@ export default function CalendarPage() {
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <button
-              type="button"
-              onClick={goToToday}
-              className="px-2.5 py-0.5 text-xs font-semibold text-slate-900 hover:bg-white rounded transition"
-            >
+            <span className="px-2.5 py-0.5 text-xs font-semibold text-slate-900 select-none">
               {MONTH_NAMES[month]} {year}
-            </button>
+            </span>
             <button
               type="button"
               onClick={nextMonth}
@@ -604,7 +611,7 @@ export default function CalendarPage() {
                       : isSelected
                       ? 'bg-slate-100/90 font-medium ring-1 ring-inset ring-slate-300'
                       : isToday
-                      ? 'bg-slate-50/80'
+                      ? 'bg-blue-50/50 ring-1 ring-inset ring-blue-300/80 shadow-2xs'
                       : 'hover:bg-slate-50/70'
                   }`}
                 >
@@ -613,9 +620,9 @@ export default function CalendarPage() {
                     <span
                       className={`inline-flex items-center justify-center text-xs transition ${
                         isToday
-                          ? 'w-5 h-5 rounded-full bg-slate-900 text-white font-bold text-[10px]'
+                          ? 'w-5 h-5 rounded-full bg-blue-600 text-white font-bold text-[10px] shadow-xs'
                           : isSelected
-                          ? 'w-5 h-5 rounded-full bg-slate-700 text-white font-bold text-[10px]'
+                          ? 'w-5 h-5 rounded-full bg-slate-800 text-white font-bold text-[10px]'
                           : cell.isCurrent
                           ? 'text-slate-800 font-medium pl-0.5 text-xs'
                           : 'text-slate-400 pl-0.5'
@@ -696,9 +703,16 @@ export default function CalendarPage() {
                     })}
 
                     {cellEvents.length > 2 && (
-                      <div className="text-[9px] text-slate-500 font-semibold pl-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDateClick(cell.day, false);
+                        }}
+                        className="text-[9px] text-blue-600 hover:text-blue-800 font-bold pl-1 hover:underline text-left block"
+                      >
                         +{cellEvents.length - 2} lainnya
-                      </div>
+                      </button>
                     )}
                   </div>
                 </div>
