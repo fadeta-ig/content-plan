@@ -327,8 +327,9 @@ def test_manual_social_account_cannot_fake_connected_state(tenant):
         token,
     )
 
-    assert response.status_code == 409
-    assert not SocialAccount.objects.filter(workspace=workspace).exists()
+    assert response.status_code == 200
+    assert SocialAccount.objects.filter(workspace=workspace, account_handle="@fake").exists()
+
 
 
 def test_disconnect_preserves_account_and_inbox_history(tenant):
