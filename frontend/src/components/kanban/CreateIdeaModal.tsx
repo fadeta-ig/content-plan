@@ -4,12 +4,22 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Plus,
+  RotateCcw,
 } from 'lucide-react';
 import { KanbanCard, AttachmentItem } from '@/lib/types';
 import { api, getErrorMessage } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import AttachmentManager from '@/components/ui/AttachmentManager';
 import RichContentEditor from '@/components/ui/RichContentEditor';
+import {
+  DRAFT_KEYS,
+  KanbanIdeaDraftData,
+  StoredDraftEnvelope,
+  getDraft,
+  saveDraft,
+  clearDraft,
+  formatDraftTimeAgo,
+} from '@/lib/draftStorage';
 
 interface CreateIdeaModalProps {
   isOpen: boolean;
@@ -28,6 +38,7 @@ export default function CreateIdeaModal({
   const [status, setStatus] = useState('unassigned');
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [creating, setCreating] = useState(false);
+  const [ideaDraftEnvelope, setIdeaDraftEnvelope] = useState<StoredDraftEnvelope<KanbanIdeaDraftData> | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -77,6 +88,57 @@ export default function CreateIdeaModal({
     };
   }, [isOpen]);
 
+  // Check for saved draft on modal open
+  useEffect(() => {
+    if (!isOpen) return;
+    const draft = getDraft<KanbanIdeaDraftData>(DRAFT_KEYS.KANBAN_IDEA);
+    if (
+      draft &&
+      (draft.data.title?.trim() ||
+        draft.data.content?.trim() ||
+        (draft.data.attachments && draft.data.attachments.length > 0))
+    ) {
+      setIdeaDraftEnvelope(draft);
+    }
+  }, [isOpen]);
+
+  // Restore draft handler
+  const handleRestoreDraft = () => {
+    if (!ideaDraftEnvelope) return;
+    const d = ideaDraftEnvelope.data;
+    if (d.title !== undefined) setTitle(d.title);
+    if (d.content !== undefined) setContent(d.content);
+    if (d.status !== undefined) setStatus(d.status);
+    if (d.attachments) setAttachments(d.attachments);
+    setIdeaDraftEnvelope(null);
+    toast.success('Draf Ide Dipulihkan', 'Judul dan catatan naskah ide dari draf lokal berhasil dipulihkan.');
+  };
+
+  // Discard draft handler
+  const handleDiscardDraft = () => {
+    clearDraft(DRAFT_KEYS.KANBAN_IDEA);
+    setIdeaDraftEnvelope(null);
+    toast.info('Draf Dihapus', 'Draf ide lokal telah dibersihkan.');
+  };
+
+  // Debounced auto-save effect
+  useEffect(() => {
+    if (!isOpen) return;
+    const hasContent = title.trim().length > 0 || content.trim().length > 0 || attachments.length > 0;
+    if (!hasContent) return;
+
+    const timer = setTimeout(() => {
+      saveDraft<KanbanIdeaDraftData>(DRAFT_KEYS.KANBAN_IDEA, {
+        title,
+        content,
+        status,
+        attachments,
+      });
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, title, content, status, attachments]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -104,6 +166,8 @@ export default function CreateIdeaModal({
         created_at: res.idea?.created_at || 'Hari Ini',
       };
 
+      clearDraft(DRAFT_KEYS.KANBAN_IDEA);
+      setIdeaDraftEnvelope(null);
       toast.success('Ide Disimpan', `Ide "${title}" berhasil ditambahkan ke database.`);
       setTitle('');
       setContent('');
@@ -155,6 +219,42 @@ export default function CreateIdeaModal({
         {/* Form Body */}
         <form onSubmit={handleSubmit}>
           <div className="p-5 space-y-3.5 max-h-[75vh] overflow-y-auto">
+            {/* Draft Restoration Banner */}
+            {ideaDraftEnvelope && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-amber-900">
+                      Draf Ide Ditemukan ({formatDraftTimeAgo(ideaDraftEnvelope.savedAt)})
+                    </p>
+                    <p className="text-[11px] text-amber-700 truncate">
+                      Pulihkan judul & naskah ide dari draf lokal Anda?
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleRestoreDraft}
+                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold rounded-lg shadow-xs transition flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Pulihkan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDiscardDraft}
+                    className="px-2 py-1 text-[11px] text-amber-800 hover:text-amber-950 font-medium hover:bg-amber-100 rounded-lg transition"
+                  >
+                    Abaikan
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div>
               <label htmlFor="idea-title" className="text-xs font-semibold text-slate-700 block mb-1">
                 Judul Ide / Topik Konten <span className="text-rose-500">*</span>:

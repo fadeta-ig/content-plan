@@ -12,6 +12,7 @@ import {
   Users,
   Image as ImageIcon,
   Check,
+  RotateCcw,
 } from 'lucide-react';
 import { api, getErrorMessage } from '@/lib/api';
 import {
@@ -28,6 +29,16 @@ import RichContentEditor from '@/components/ui/RichContentEditor';
 import AttachmentManager from '@/components/ui/AttachmentManager';
 import MediaPickerModal from '@/components/composer/MediaPickerModal';
 import { formatHandle } from '@/lib/format';
+import {
+  DRAFT_KEYS,
+  CalendarPostDraftData,
+  CalendarShootingDraftData,
+  StoredDraftEnvelope,
+  getDraft,
+  saveDraft,
+  clearDraft,
+  formatDraftTimeAgo,
+} from '@/lib/draftStorage';
 
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -119,6 +130,130 @@ export default function CalendarScheduleModal({
     { item: 'Lighting Softbox & RGB', checked: false },
   ]);
   const [isSubmittingShoot, setIsSubmittingShoot] = useState(false);
+
+  // Auto-Save Draft State
+  const [postDraftEnvelope, setPostDraftEnvelope] = useState<StoredDraftEnvelope<CalendarPostDraftData> | null>(null);
+  const [shootingDraftEnvelope, setShootingDraftEnvelope] = useState<StoredDraftEnvelope<CalendarShootingDraftData> | null>(null);
+
+  // Check for auto-saved drafts when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!initialPostCaption && !initialPostIdeaId) {
+      const pDraft = getDraft<CalendarPostDraftData>(DRAFT_KEYS.CALENDAR_POST);
+      if (
+        pDraft &&
+        (pDraft.data.caption?.trim() ||
+          (pDraft.data.media && pDraft.data.media.length > 0) ||
+          (pDraft.data.attachments && pDraft.data.attachments.length > 0))
+      ) {
+        setPostDraftEnvelope(pDraft);
+      }
+    }
+    if (!initialShootTitle && !initialShootDescription && !initialShootIdeaId) {
+      const sDraft = getDraft<CalendarShootingDraftData>(DRAFT_KEYS.CALENDAR_SHOOTING);
+      if (
+        sDraft &&
+        (sDraft.data.title?.trim() ||
+          sDraft.data.description?.trim() ||
+          sDraft.data.location?.trim() ||
+          (sDraft.data.crewList && sDraft.data.crewList.some((c) => c.name.trim())))
+      ) {
+        setShootingDraftEnvelope(sDraft);
+      }
+    }
+  }, [isOpen, initialPostCaption, initialPostIdeaId, initialShootTitle, initialShootDescription, initialShootIdeaId]);
+
+  // Restore post draft
+  const handleRestorePostDraft = () => {
+    if (!postDraftEnvelope) return;
+    const d = postDraftEnvelope.data;
+    if (d.caption !== undefined) setPostCaption(d.caption);
+    if (d.selectedAccountIds && d.selectedAccountIds.length > 0) setSelectedAccountIds(d.selectedAccountIds);
+    if (d.media) setPostMedia(d.media);
+    if (d.attachments) setPostAttachments(d.attachments);
+    if (d.selectedIdeaId) setPostSelectedIdeaId(d.selectedIdeaId);
+    setPostDraftEnvelope(null);
+    toast.success('Draf Postingan Dipulihkan', 'Naskah dan media dari draf lokal Anda berhasil dipulihkan.');
+  };
+
+  // Discard post draft
+  const handleDiscardPostDraft = () => {
+    clearDraft(DRAFT_KEYS.CALENDAR_POST);
+    setPostDraftEnvelope(null);
+    toast.info('Draf Dihapus', 'Draf postingan lokal telah dibersihkan.');
+  };
+
+  // Restore shooting draft
+  const handleRestoreShootingDraft = () => {
+    if (!shootingDraftEnvelope) return;
+    const d = shootingDraftEnvelope.data;
+    if (d.title !== undefined) setShootTitle(d.title);
+    if (d.description !== undefined) setShootDescription(d.description);
+    if (d.location !== undefined) setShootLocation(d.location);
+    if (d.status !== undefined) setShootStatus(d.status);
+    if (d.crewList) setCrewList(d.crewList);
+    if (d.attachments) setShootAttachments(d.attachments);
+    if (d.selectedIdeaId) setSelectedIdeaId(d.selectedIdeaId);
+    setShootingDraftEnvelope(null);
+    toast.success('Draf Shooting Dipulihkan', 'Data sesi shooting dari draf lokal Anda berhasil dipulihkan.');
+  };
+
+  // Discard shooting draft
+  const handleDiscardShootingDraft = () => {
+    clearDraft(DRAFT_KEYS.CALENDAR_SHOOTING);
+    setShootingDraftEnvelope(null);
+    toast.info('Draf Dihapus', 'Draf shooting lokal telah dibersihkan.');
+  };
+
+  // Debounced auto-save for Post
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'post') return;
+    const hasContent =
+      postCaption.trim().length > 0 ||
+      postMedia.length > 0 ||
+      postAttachments.length > 0;
+    if (!hasContent) return;
+
+    const timer = setTimeout(() => {
+      saveDraft<CalendarPostDraftData>(DRAFT_KEYS.CALENDAR_POST, {
+        caption: postCaption,
+        selectedAccountIds,
+        scheduledAt: postDate,
+        media: postMedia,
+        attachments: postAttachments,
+        selectedIdeaId: postSelectedIdeaId || undefined,
+      });
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, activeTab, postCaption, selectedAccountIds, postDate, postMedia, postAttachments, postSelectedIdeaId]);
+
+  // Debounced auto-save for Shooting
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'shooting') return;
+    const hasContent =
+      shootTitle.trim().length > 0 ||
+      shootDescription.trim().length > 0 ||
+      shootLocation.trim().length > 0;
+    if (!hasContent) return;
+
+    const timer = setTimeout(() => {
+      saveDraft<CalendarShootingDraftData>(DRAFT_KEYS.CALENDAR_SHOOTING, {
+        title: shootTitle,
+        description: shootDescription,
+        location: shootLocation,
+        scheduledAt: shootScheduledAt,
+        endAt: shootEndAt,
+        status: shootStatus,
+        crewList,
+        equipmentList,
+        attachments: shootAttachments,
+        selectedIdeaId: selectedIdeaId || undefined,
+      });
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, activeTab, shootTitle, shootDescription, shootLocation, shootScheduledAt, shootEndAt, shootStatus, crewList, equipmentList, shootAttachments, selectedIdeaId]);
 
   // Initialize selected accounts from connectedAccounts
   useEffect(() => {
@@ -230,6 +365,8 @@ export default function CalendarScheduleModal({
         related_idea_title: linkedIdea?.title || null,
       };
 
+      clearDraft(DRAFT_KEYS.CALENDAR_POST);
+      setPostDraftEnvelope(null);
       onPostCreated(newEv);
       toast.success('Jadwal Ditambahkan', 'Postingan media sosial berhasil dijadwalkan ke kalender.');
       onClose();
@@ -284,6 +421,8 @@ export default function CalendarScheduleModal({
         platforms: ['shooting'],
       };
 
+      clearDraft(DRAFT_KEYS.CALENDAR_SHOOTING);
+      setShootingDraftEnvelope(null);
       onShootingCreated(newEv);
       toast.success('Sesi Shooting Dibuat', `Rencana shooting "${shootTitle}" berhasil disimpan.`);
       onClose();
@@ -370,6 +509,42 @@ export default function CalendarScheduleModal({
             /* TAB 1: SOCIAL POST FORM                                                   */
             /* ========================================================================= */
             <form onSubmit={handlePostSubmit} className="space-y-4">
+              {/* Draft Restoration Banner for Post */}
+              {postDraftEnvelope && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-amber-900">
+                        Draf Postingan Ditemukan ({formatDraftTimeAgo(postDraftEnvelope.savedAt)})
+                      </p>
+                      <p className="text-[11px] text-amber-700 truncate">
+                        Pulihkan naskah & konfigurasi akun dari draf lokal Anda?
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleRestorePostDraft}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold rounded-lg shadow-xs transition flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Pulihkan</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDiscardPostDraft}
+                      className="px-2 py-1 text-[11px] text-amber-800 hover:text-amber-950 font-medium hover:bg-amber-100 rounded-lg transition"
+                    >
+                      Abaikan
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Kanban Idea / Brief Selector */}
               {kanbanIdeas.length > 0 && (
                 <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200/80 space-y-1.5">
@@ -419,9 +594,60 @@ export default function CalendarScheduleModal({
                     Pilih Akun Sosial Target <span className="text-rose-500">*</span>
                   </label>
                   <span className="text-[11px] text-slate-500">
-                    {connectedAccounts.length} Akun Terhubung
+                    {selectedAccountIds.length} dari {connectedAccounts.length} Akun Dipilih
                   </span>
                 </div>
+
+                {/* Multi-Account Quick Selectors */}
+                {connectedAccounts.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-semibold text-slate-500 mr-1 uppercase tracking-wider">
+                      Pilihan Cepat:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAccountIds(connectedAccounts.map((a) => a.id))}
+                      className="px-2 py-0.5 rounded-lg text-[11px] font-medium bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 hover:border-slate-300 transition shadow-2xs"
+                    >
+                      Pilih Semua ({connectedAccounts.length})
+                    </button>
+                    {Array.from(new Set(connectedAccounts.map((a) => a.platform))).map((plat) => {
+                      const platAccs = connectedAccounts.filter((a) => a.platform === plat);
+                      const platLabel = plat.charAt(0).toUpperCase() + plat.slice(1);
+                      const isAllPlatSelected = platAccs.every((a) => selectedAccountIds.includes(a.id));
+                      return (
+                        <button
+                          key={plat}
+                          type="button"
+                          onClick={() => {
+                            const platIds = platAccs.map((a) => a.id);
+                            if (isAllPlatSelected) {
+                              const remaining = selectedAccountIds.filter((id) => !platIds.includes(id));
+                              setSelectedAccountIds(remaining.length > 0 ? remaining : [platIds[0]]);
+                            } else {
+                              setSelectedAccountIds(Array.from(new Set([...selectedAccountIds, ...platIds])));
+                            }
+                          }}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium border transition shadow-2xs ${
+                            isAllPlatSelected
+                              ? 'bg-blue-50 text-blue-700 border-blue-300 font-semibold'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <SocialIcon platform={plat} size={11} />
+                          <span>Semua {platLabel} ({platAccs.length})</span>
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAccountIds([connectedAccounts[0]?.id].filter(Boolean))}
+                      className="px-2 py-0.5 rounded-lg text-[11px] font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition ml-auto"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                )}
 
                 {connectedAccounts.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -603,6 +829,41 @@ export default function CalendarScheduleModal({
             /* TAB 2: SHOOTING SESSION FORM                                              */
             /* ========================================================================= */
             <form onSubmit={handleShootingSubmit} className="space-y-4">
+              {/* Draft Restoration Banner for Shooting */}
+              {shootingDraftEnvelope && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-amber-900">
+                        Draf Sesi Shooting Ditemukan ({formatDraftTimeAgo(shootingDraftEnvelope.savedAt)})
+                      </p>
+                      <p className="text-[11px] text-amber-700 truncate">
+                        Pulihkan judul, deskripsi, lokasi, dan kru dari draf lokal Anda?
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleRestoreShootingDraft}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold rounded-lg shadow-xs transition flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Pulihkan</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDiscardShootingDraft}
+                      className="px-2 py-1 text-[11px] text-amber-800 hover:text-amber-950 font-medium hover:bg-amber-100 rounded-lg transition"
+                    >
+                      Abaikan
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* Kanban Idea Selector */}
               {kanbanIdeas.length > 0 && (
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">

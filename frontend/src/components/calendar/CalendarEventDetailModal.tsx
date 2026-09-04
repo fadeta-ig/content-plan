@@ -502,9 +502,65 @@ export default function CalendarEventDetailModal({
                 <form onSubmit={handleSaveEditPost} className="space-y-4">
                   {/* Account Selector in Edit Mode */}
                   <div className="space-y-2">
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                      Target Akun Sosial <span className="text-rose-500">*</span>
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                        Target Akun Sosial <span className="text-rose-500">*</span>
+                      </label>
+                      <span className="text-[11px] text-slate-500">
+                        {editPostAccountIds.length} dari {connectedAccounts.length} Akun Dipilih
+                      </span>
+                    </div>
+
+                    {/* Multi-Account Quick Selectors */}
+                    {connectedAccounts.length > 1 && (
+                      <div className="flex flex-wrap items-center gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl">
+                        <span className="text-[10px] font-semibold text-slate-500 mr-1 uppercase tracking-wider">
+                          Pilihan Cepat:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditPostAccountIds(connectedAccounts.map((a) => a.id))}
+                          className="px-2 py-0.5 rounded-lg text-[11px] font-medium bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 hover:border-slate-300 transition shadow-2xs"
+                        >
+                          Pilih Semua ({connectedAccounts.length})
+                        </button>
+                        {Array.from(new Set(connectedAccounts.map((a) => a.platform))).map((plat) => {
+                          const platAccs = connectedAccounts.filter((a) => a.platform === plat);
+                          const platLabel = plat.charAt(0).toUpperCase() + plat.slice(1);
+                          const isAllPlatSelected = platAccs.every((a) => editPostAccountIds.includes(a.id));
+                          return (
+                            <button
+                              key={plat}
+                              type="button"
+                              onClick={() => {
+                                const platIds = platAccs.map((a) => a.id);
+                                if (isAllPlatSelected) {
+                                  const remaining = editPostAccountIds.filter((id) => !platIds.includes(id));
+                                  setEditPostAccountIds(remaining.length > 0 ? remaining : [platIds[0]]);
+                                } else {
+                                  setEditPostAccountIds(Array.from(new Set([...editPostAccountIds, ...platIds])));
+                                }
+                              }}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium border transition shadow-2xs ${
+                                isAllPlatSelected
+                                  ? 'bg-blue-50 text-blue-700 border-blue-300 font-semibold'
+                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              <SocialIcon platform={plat} size={11} />
+                              <span>Semua {platLabel} ({platAccs.length})</span>
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => setEditPostAccountIds([connectedAccounts[0]?.id].filter(Boolean))}
+                          className="px-2 py-0.5 rounded-lg text-[11px] font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition ml-auto"
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {connectedAccounts.map((account) => {
                         const isSelected = editPostAccountIds.includes(account.id);

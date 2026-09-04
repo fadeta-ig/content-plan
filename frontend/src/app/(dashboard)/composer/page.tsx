@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState, Suspense } from 'react';
+import React, { useCallback, useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -15,6 +15,10 @@ import {
   Sparkles,
   Copy,
   AlertCircle,
+  RotateCcw,
+  Upload,
+  Loader2,
+  Check,
 } from 'lucide-react';
 import { api, getErrorMessage } from '@/lib/api';
 import { MediaItem, SocialAccount, KanbanCard, AttachmentItem } from '@/lib/types';
@@ -26,6 +30,15 @@ import { useConfirm } from '@/components/ui/ConfirmDialog';
 import RichContentEditor from '@/components/ui/RichContentEditor';
 import SocialPostMockup from '@/components/ui/SocialPostMockup';
 import AttachmentManager from '@/components/ui/AttachmentManager';
+import {
+  DRAFT_KEYS,
+  ComposerDraftData,
+  StoredDraftEnvelope,
+  getDraft,
+  saveDraft,
+  clearDraft,
+  formatDraftTimeAgo,
+} from '@/lib/draftStorage';
 
 const PLATFORMS = [
   { id: 'instagram', label: 'Instagram', maxChars: 2200 },
@@ -80,6 +93,16 @@ function ComposerForm() {
   const [kanbanIdeas, setKanbanIdeas] = useState<KanbanCard[]>([]);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(ideaIdParam || null);
   const [linkedIdea, setLinkedIdea] = useState<{ id: string; title: string; content?: string } | null>(null);
+
+  // Auto-Save Draft State
+  const [savedDraftEnvelope, setSavedDraftEnvelope] = useState<StoredDraftEnvelope<ComposerDraftData> | null>(null);
+  const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+
+  // Direct Drag & Drop Media Upload State
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [isUploadingDirect, setIsUploadingDirect] = useState(false);
+  const [uploadProgressText, setUploadProgressText] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadAccounts = useCallback(async () => {
     setAccountsLoading(true);
@@ -201,6 +224,151 @@ function ComposerForm() {
     }
   }, [postIdParam, titleParam, contentParam]);
 
+  // Check for auto-saved draft on mount (only for new posts)
+  useEffect(() => {
+    if (postIdParam || titleParam || contentParam) return;
+    const draft = getDraft<ComposerDraftData>(DRAFT_KEYS.COMPOSER);
+    if (
+      draft &&
+      (draft.data.caption?.trim() ||
+        draft.data.firstComment?.trim() ||
+        (draft.data.attachedMedia && draft.data.attachedMedia.length > 0) ||
+        (draft.data.attachedDocs && draft.data.attachedDocs.length > 0))
+    ) {
+      setSavedDraftEnvelope(draft);
+    }
+  }, [postIdParam, titleParam, contentParam]);
+
+  // Restore draft content
+  const handleRestoreDraft = () => {
+    if (!savedDraftEnvelope) return;
+    const d = savedDraftEnvelope.data;
+    if (d.caption !== undefined) setCaption(d.caption);
+    if (d.firstComment !== undefined) setFirstComment(d.firstComment);
+    if (d.showFirstComment !== undefined) setShowFirstComment(d.showFirstComment);
+    if (d.scheduledAt !== undefined) setScheduledAt(d.scheduledAt);
+    if (d.attachedMedia) setAttachedMedia(d.attachedMedia);
+    if (d.attachedDocs) setAttachedDocs(d.attachedDocs);
+    if (d.selectedPlatforms && d.selectedPlatforms.length > 0) setSelectedPlatforms(d.selectedPlatforms);
+    if (d.selectedAccountIds && d.selectedAccountIds.length > 0) setSelectedAccountIds(d.selectedAccountIds);
+    if (d.selectedIdeaId) setSelectedIdeaId(d.selectedIdeaId);
+    setSavedDraftEnvelope(null);
+    toast.success('Draf Dipulihkan', 'Naskah, media, dan pengaturan postingan berhasil dimuat.');
+  };
+
+  // Discard draft content
+  const handleDiscardDraft = () => {
+    clearDraft(DRAFT_KEYS.COMPOSER);
+    setSavedDraftEnvelope(null);
+    toast.info('Draf Dihapus', 'Draf lokal telah dibersihkan dari penyimpanan browser.');
+  };
+
+  // Debounced auto-save effect (1000ms)
+  useEffect(() => {
+    if (editingPostId || postIdParam) return;
+    const hasContent =
+      caption.trim().length > 0 ||
+      firstComment.trim().length > 0 ||
+      attachedMedia.length > 0 ||
+      attachedDocs.length > 0;
+    if (!hasContent) return;
+
+    const timer = setTimeout(() => {
+      const payload: ComposerDraftData = {
+        caption,
+        firstComment,
+        showFirstComment,
+        scheduledAt,
+        attachedMedia,
+        attachedDocs,
+        selectedPlatforms,
+        selectedAccountIds,
+        selectedIdeaId,
+      };
+      saveDraft(DRAFT_KEYS.COMPOSER, payload);
+      const now = new Date();
+      setLastSavedTime(
+        now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [
+    caption,
+    firstComment,
+    showFirstComment,
+    scheduledAt,
+    attachedMedia,
+    attachedDocs,
+    selectedPlatforms,
+    selectedAccountIds,
+    selectedIdeaId,
+    editingPostId,
+    postIdParam,
+  ]);
+
+  // Direct Drag-and-Drop & Direct File Upload Handlers
+  const handleDirectUploadFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter(
+      (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
+    );
+    if (fileArray.length === 0) {
+      toast.warning('Format Tidak Didukung', 'Silakan pilih file gambar atau video (JPEG, PNG, WebP, MP4, MOV).');
+      return;
+    }
+
+    setIsUploadingDirect(true);
+    let successCount = 0;
+    const newlyUploaded: MediaItem[] = [];
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      setUploadProgressText(`Mengunggah (${i + 1}/${fileArray.length}): ${file.name}...`);
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await api.uploadMedia(formData);
+        if (res?.asset) {
+          newlyUploaded.push(res.asset);
+          successCount++;
+        }
+      } catch (err: unknown) {
+        toast.error(`Gagal Unggah ${file.name}`, getErrorMessage(err, 'Server menolak file.'));
+      }
+    }
+
+    if (newlyUploaded.length > 0) {
+      setAttachedMedia((prev) => [...prev, ...newlyUploaded]);
+      toast.success(
+        'Media Terlampir',
+        `${successCount} file media berhasil diunggah langsung dan ditambahkan ke draf postingan.`
+      );
+    }
+    setIsUploadingDirect(false);
+    setUploadProgressText('');
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDraggingOver) setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      void handleDirectUploadFiles(e.dataTransfer.files);
+    }
+  };
+
   const togglePlatform = (id: string) => {
     setSelectedPlatforms((prev) => {
       const willSelect = !prev.includes(id);
@@ -264,6 +432,9 @@ function ComposerForm() {
       if (editingPostId) {
         router.push('/calendar');
       } else {
+        clearDraft(DRAFT_KEYS.COMPOSER);
+        setSavedDraftEnvelope(null);
+        setLastSavedTime(null);
         setCaption('');
         setFirstComment('');
         setAttachedMedia([]);
@@ -356,15 +527,22 @@ function ComposerForm() {
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-base font-semibold text-slate-900 tracking-tight">
               Post Composer Multi-Channel
             </h1>
-            {editingPostId && (
+            {editingPostId ? (
               <span className="ui-badge bg-blue-50 border-blue-200 text-blue-700 text-xs flex items-center gap-1 font-mono">
                 <PenSquare className="w-3 h-3" />
                 Mode Edit (Terhubung Kalender)
               </span>
+            ) : (
+              lastSavedTime && (
+                <span className="ui-badge bg-emerald-50 border-emerald-200 text-emerald-700 text-[11px] flex items-center gap-1 font-medium">
+                  <Check className="w-3 h-3 text-emerald-600" />
+                  <span>Draf tersimpan ({lastSavedTime})</span>
+                </span>
+              )
             )}
           </div>
           <p className="text-xs text-slate-500">
@@ -378,6 +556,9 @@ function ComposerForm() {
               type="button"
               onClick={() => {
                 setEditingPostId(null);
+                clearDraft(DRAFT_KEYS.COMPOSER);
+                setSavedDraftEnvelope(null);
+                setLastSavedTime(null);
                 setCaption('');
                 setFirstComment('');
                 setAttachedMedia([]);
@@ -397,6 +578,47 @@ function ComposerForm() {
           </Link>
         </div>
       </div>
+
+      {/* Auto-Save Draft Restoration Banner */}
+      {savedDraftEnvelope && !editingPostId && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
+              <RotateCcw className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-xs font-bold text-amber-900">
+                  Draf Otomatis Ditemukan ({formatDraftTimeAgo(savedDraftEnvelope.savedAt)})
+                </p>
+                <span className="text-[10px] bg-amber-200/70 text-amber-900 font-semibold px-2 py-0.5 rounded-full">
+                  LocalStorage Tersimpan
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-800 truncate">
+                Anda memiliki naskah draf lokal yang belum diterbitkan. Ingin melanjutkan draf ini?
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <button
+              type="button"
+              onClick={handleRestoreDraft}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg shadow-xs transition flex items-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Pulihkan Draf</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDiscardDraft}
+              className="px-2.5 py-1.5 text-xs text-amber-800 hover:text-amber-950 font-medium hover:bg-amber-200/50 rounded-lg transition"
+            >
+              Abaikan / Buang
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -656,69 +878,19 @@ function ComposerForm() {
               placeholder="Tulis caption postingan, informasi acara, dan hashtag di sini..."
             />
 
-            {/* Attached Media List */}
-            {attachedMedia.length > 0 && (
-              <div className="pt-2 space-y-1.5">
-                <span className="text-[11px] font-semibold text-slate-700 block">
-                  Media Terlampir ({attachedMedia.length}):
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {attachedMedia.map((media) => (
-                    <div
-                      key={media.id}
-                      className="flex items-center gap-2 p-1.5 rounded border border-slate-200 bg-slate-50 text-xs text-slate-800"
-                    >
-                      {media.file_type === 'image' ? (
-                        <Image
-                          src={media.thumbnail_url || media.file_url}
-                          alt={media.title || 'Media terlampir'}
-                          width={24}
-                          height={24}
-                          unoptimized
-                          className="w-6 h-6 object-cover rounded"
-                        />
-                      ) : (
-                        <ImageIcon className="w-5 h-5 text-slate-500" />
-                      )}
-                      <span className="max-w-[120px] truncate text-[11px] font-medium">{media.title}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeMedia(media.id)}
-                        aria-label={`Hapus media ${media.title || 'terlampir'}`}
-                        className="text-slate-400 hover:text-rose-600 p-0.5"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Media Upload & First Comment Action Bar */}
+            {/* First Comment Toggle & Character Count Bar */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsMediaModalOpen(true)}
-                  className="ui-btn ui-btn-secondary text-xs"
-                >
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  <span>Pilih / Upload Media</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowFirstComment(!showFirstComment)}
-                  aria-expanded={showFirstComment}
-                  className={`ui-btn text-xs ${
-                    showFirstComment ? 'bg-slate-900 text-white' : 'ui-btn-secondary'
-                  }`}
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>First Comment</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowFirstComment(!showFirstComment)}
+                aria-expanded={showFirstComment}
+                className={`ui-btn text-xs ${
+                  showFirstComment ? 'bg-slate-900 text-white' : 'ui-btn-secondary'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>First Comment</span>
+              </button>
 
               <span className="text-[11px] text-slate-400 font-mono">
                 {caption.length} Karakter
@@ -738,6 +910,129 @@ function ComposerForm() {
                   minHeight="100px"
                   placeholder="Masukkan link website, hashtag tambahan, atau call-to-action..."
                 />
+              </div>
+            )}
+          </div>
+
+          {/* Direct Media Upload & Visual Content Card */}
+          <div className="ui-card space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-slate-700" />
+                <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                  Lampiran Media & Konten Visual
+                </h2>
+                {attachedMedia.length > 0 && (
+                  <span className="text-[11px] bg-blue-50 text-blue-700 font-semibold px-2 py-0.5 rounded-full border border-blue-200">
+                    {attachedMedia.length} File Terlampir
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMediaModalOpen(true)}
+                className="ui-btn ui-btn-secondary text-xs flex items-center gap-1.5"
+              >
+                <ImageIcon className="w-3.5 h-3.5 text-slate-600" />
+                <span>Pilih dari Media Library</span>
+              </button>
+            </div>
+
+            {/* Direct Drag & Drop Zone */}
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => !isUploadingDirect && fileInputRef.current?.click()}
+              className={`group relative border-2 border-dashed rounded-xl p-5 transition-all duration-150 cursor-pointer text-center ${
+                isDraggingOver
+                  ? 'border-blue-500 bg-blue-50/80 shadow-md scale-[1.01]'
+                  : 'border-slate-200 hover:border-blue-300 bg-slate-50/60 hover:bg-blue-50/20'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,video/*"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    void handleDirectUploadFiles(e.target.files);
+                  }
+                }}
+                className="hidden"
+              />
+
+              {isUploadingDirect ? (
+                <div className="py-4 flex flex-col items-center justify-center gap-2">
+                  <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                  <p className="text-xs font-semibold text-blue-900">{uploadProgressText || 'Mengunggah file media...'}</p>
+                  <span className="text-[10px] text-slate-500">File langsung disimpan ke database media workspace</span>
+                </div>
+              ) : (
+                <div className="py-2 flex flex-col items-center justify-center gap-2">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform shadow-2xs">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800">
+                      <span className="text-blue-600 underline">Klik untuk telusuri file</span> atau seret & lepas (drag-and-drop) ke sini
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Mendukung Gambar (PNG, JPG, WebP) & Video (MP4, MOV). Langsung diunggah & dilampirkan.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Attached Media Grid */}
+            {attachedMedia.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] font-semibold text-slate-700 block">
+                  Media yang Dilampirkan ({attachedMedia.length}):
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                  {attachedMedia.map((media) => (
+                    <div
+                      key={media.id}
+                      className="group relative rounded-xl border border-slate-200 overflow-hidden bg-slate-100 flex flex-col aspect-video shadow-2xs"
+                    >
+                      {media.file_type === 'image' ? (
+                        <Image
+                          src={media.thumbnail_url || media.file_url}
+                          alt={media.title || 'Media terlampir'}
+                          fill
+                          unoptimized
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-500 p-2 bg-slate-900/10">
+                          <ImageIcon className="w-6 h-6 text-slate-600" />
+                          <span className="text-[10px] font-mono font-semibold uppercase text-slate-700">VIDEO</span>
+                        </div>
+                      )}
+
+                      {/* Overlay on hover */}
+                      <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeMedia(media.id, media.title);
+                          }}
+                          aria-label={`Hapus media ${media.title || 'terlampir'}`}
+                          className="self-end p-1 rounded-md bg-rose-600 text-white hover:bg-rose-700 transition shadow-xs"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                        <p className="text-[11px] text-white font-medium truncate drop-shadow">
+                          {media.title}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
