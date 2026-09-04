@@ -60,7 +60,10 @@ export default function AccountsPage() {
     setLoading(true);
     try {
       const accountsData = await api.getSocialAccounts();
-      setAccounts(accountsData.accounts);
+      const connectedOnly = (accountsData.accounts || []).filter(
+        (a) => a.connection_status !== 'disconnected'
+      );
+      setAccounts(connectedOnly);
     } catch (err) {
       setAccounts([]);
       toast.error(
@@ -267,11 +270,15 @@ export default function AccountsPage() {
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                       : acc.connection_status === 'token_expiring'
                         ? 'bg-amber-50 border-amber-200 text-amber-700'
-                        : 'bg-rose-50 border-rose-200 text-rose-700'
+                        : acc.connection_status === 'disconnected'
+                          ? 'bg-slate-100 border-slate-200 text-slate-600'
+                          : 'bg-rose-50 border-rose-200 text-rose-700'
                   }`}
                 >
                   {acc.connection_status === 'connected' ? (
                     <CheckCircle2 className="w-3 h-3" />
+                  ) : acc.connection_status === 'disconnected' ? (
+                    <X className="w-3 h-3 text-slate-400" />
                   ) : (
                     <AlertCircle className="w-3 h-3" />
                   )}
@@ -280,7 +287,9 @@ export default function AccountsPage() {
                       ? 'Aktif'
                       : acc.connection_status === 'token_expiring'
                         ? 'Perlu Otorisasi'
-                        : 'Bermasalah'}
+                        : acc.connection_status === 'disconnected'
+                          ? 'Terputus'
+                          : 'Bermasalah'}
                   </span>
                 </span>
               </div>

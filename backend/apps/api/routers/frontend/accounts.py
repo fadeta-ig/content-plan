@@ -30,7 +30,11 @@ class ManualAccountCreateSchema(Schema):
 def list_social_accounts(request: HttpRequest):
     user, workspace = get_current_user_and_workspace(request)
 
-    accounts = list(SocialAccount.objects.filter(workspace=workspace).order_by("-connected_at"))
+    accounts = list(
+        SocialAccount.objects.filter(workspace=workspace)
+        .exclude(connection_status=SocialAccount.ConnectionStatus.DISCONNECTED)
+        .order_by("-connected_at")
+    )
 
     # Auto-heal any manual accounts (accounts without oauth tokens) that were
     # erroneously marked as ERROR by the background health check.
@@ -177,7 +181,13 @@ def disconnect_social_account(request: HttpRequest, account_id: uuid.UUID):
     is_manual = not bool(account.oauth_access_token)
     revocation_confirmed = disconnect_account_service(account, provider)
     account_label = account.account_name or account.account_handle or "media sosial"
-    if is_manual:
+    has_history = account.inbox_messages.exists() or account.platform_posts.exists()
+
+    if is_manual and not has_history:
+        account.delete()
+        revocation_confirmed = True
+        message = f"Saluran {account_label} berhasil dihapus dari workspace."
+    elif is_manual:
         revocation_confirmed = True
         message = f"Saluran {account_label} berhasil dilepas dari workspace."
     elif revocation_confirmed:
