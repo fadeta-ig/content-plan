@@ -1,11 +1,20 @@
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 from apps.common.encryption import EncryptedTextField
 from apps.common.managers import WorkspaceScopedManager
 from apps.credentials.models import PlatformCredential
+
+if TYPE_CHECKING:
+    from django.db.models.manager import Manager
+
+    from apps.analytics.models import AccountInsightsSnapshot
+    from apps.calendar.models import PostingSlot, Queue
+    from apps.composer.models import PlatformPost
+    from apps.inbox.models import InboxMessage
+    from apps.publisher.models import RateLimitState
 
 
 class SocialAccount(models.Model):
@@ -65,6 +74,14 @@ class SocialAccount(models.Model):
     # call as insufficient-scope. Surfaces a "Reconnect for analytics" CTA in
     # place of the metric region. Cleared on successful reconnect.
     analytics_needs_reconnect = models.BooleanField(default=False)
+
+    if TYPE_CHECKING:
+        inbox_messages: Manager[InboxMessage]
+        platform_posts: Manager[PlatformPost]
+        rate_limit_states: Manager[RateLimitState]
+        posting_slots: Manager[PostingSlot]
+        queues: Manager[Queue]
+        analytics_snapshots: Manager[AccountInsightsSnapshot]
 
     objects = WorkspaceScopedManager()
 
