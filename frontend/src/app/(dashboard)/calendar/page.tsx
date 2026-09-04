@@ -27,6 +27,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog';
 import AttachmentList from '@/components/ui/AttachmentList';
 import CalendarScheduleModal from '@/components/calendar/CalendarScheduleModal';
 import CalendarEventDetailModal from '@/components/calendar/CalendarEventDetailModal';
+import { formatHandle } from '@/lib/format';
 
 const DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const DAYS_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -496,7 +497,7 @@ export default function CalendarPage() {
                 <option value="all">Semua Akun ({connectedAccounts.length})</option>
                 {connectedAccounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    @{acc.account_handle || acc.account_name} ({acc.platform})
+                    {formatHandle(acc.account_handle || acc.account_name)} ({acc.platform})
                   </option>
                 ))}
               </select>
@@ -686,7 +687,7 @@ export default function CalendarPage() {
                           {/* Account Handle or Title */}
                           <span className="truncate flex-1 font-medium text-[9.5px]">
                             {!isShooting && primaryAccount?.account_handle ? (
-                              <strong className="text-slate-900 mr-0.5">@{primaryAccount.account_handle}:</strong>
+                              <strong className="text-slate-900 mr-0.5">{formatHandle(primaryAccount.account_handle)}:</strong>
                             ) : null}
                             {ev.title}
                           </span>
@@ -784,7 +785,7 @@ export default function CalendarPage() {
                               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-[10px] font-medium text-slate-800 border border-slate-200"
                             >
                               <SocialIcon platform={acc.platform} size={9} />
-                              <span>@{acc.account_handle || acc.account_name}</span>
+                              <span>{formatHandle(acc.account_handle || acc.account_name)}</span>
                             </span>
                           ))}
                         </div>

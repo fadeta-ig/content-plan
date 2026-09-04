@@ -27,6 +27,7 @@ import SocialIcon from '@/components/ui/SocialIcon';
 import RichContentEditor from '@/components/ui/RichContentEditor';
 import AttachmentManager from '@/components/ui/AttachmentManager';
 import MediaPickerModal from '@/components/composer/MediaPickerModal';
+import { formatHandle } from '@/lib/format';
 
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -457,7 +458,7 @@ export default function CalendarScheduleModal({
                                 {account.account_name}
                               </p>
                               <span className={`text-[10px] truncate block ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
-                                @{account.account_handle || account.account_name} • {account.platform.toUpperCase()}
+                                {formatHandle(account.account_handle || account.account_name)} • {account.platform.toUpperCase()}
                               </span>
                             </div>
                           </div>

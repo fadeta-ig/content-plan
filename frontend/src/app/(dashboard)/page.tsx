@@ -20,6 +20,7 @@ import { OverviewMetrics, SocialAccount } from '@/lib/types';
 import SocialIcon from '@/components/ui/SocialIcon';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
+import DashboardPostPreviewModal from '@/components/dashboard/DashboardPostPreviewModal';
 
 const POST_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   draft: { label: 'Draft', className: 'bg-slate-50 text-slate-700 border-slate-200' },
@@ -38,6 +39,7 @@ export default function OverviewDashboardPage() {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [selectedPreviewPostId, setSelectedPreviewPostId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -216,15 +218,21 @@ export default function OverviewDashboardPage() {
               metrics.recent_posts.map((post) => {
                 const statusConfig = POST_STATUS_CONFIG[post.status] ?? POST_STATUS_CONFIG.draft;
                 return (
-                <div key={post.id} className="py-2.5 flex items-start justify-between gap-3 text-xs">
-                  <div className="space-y-1">
-                    <p className="font-semibold text-slate-900 line-clamp-1">{post.caption}</p>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                <div
+                  key={post.id}
+                  onClick={() => setSelectedPreviewPostId(post.id)}
+                  className="py-2.5 px-2.5 -mx-2.5 rounded-xl flex items-start justify-between gap-3 text-xs hover:bg-slate-50 transition cursor-pointer group"
+                >
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <p className="font-semibold text-slate-900 group-hover:text-blue-600 transition truncate">
+                      {post.caption}
+                    </p>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
                       <div className="flex items-center gap-1">
                         {post.platforms.map((plat) => (
                           <span
                             key={plat}
-                            className="ui-badge bg-slate-50 border-slate-200 text-slate-700 flex items-center gap-1"
+                            className="ui-badge bg-white border-slate-200 text-slate-700 flex items-center gap-1 shadow-2xs"
                           >
                             <SocialIcon platform={plat} size={11} />
                             <span className="font-semibold uppercase">{plat.slice(0, 2)}</span>
@@ -237,12 +245,22 @@ export default function OverviewDashboardPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <span
                       className={`ui-badge shrink-0 ${statusConfig.className}`}
                     >
                       {statusConfig.label}
                     </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPreviewPostId(post.id)}
+                      title="Lihat Pratinjau Mockup"
+                      aria-label="Lihat Pratinjau Mockup"
+                      className="text-slate-400 hover:text-slate-800 p-1 rounded hover:bg-slate-200/60 transition"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
 
                     <button
                       type="button"
@@ -273,7 +291,7 @@ export default function OverviewDashboardPage() {
                       }}
                       title="Hapus Postingan"
                       aria-label={`Hapus postingan ${post.caption.slice(0, 40)}`}
-                      className="text-slate-300 hover:text-rose-600 p-1 transition"
+                      className="text-slate-300 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -345,6 +363,24 @@ export default function OverviewDashboardPage() {
           </div>
         </div>
       </div>
+      {/* Live Mockup Preview & Quick Edit Modal */}
+      {selectedPreviewPostId && (
+        <DashboardPostPreviewModal
+          postId={selectedPreviewPostId}
+          onClose={() => setSelectedPreviewPostId(null)}
+          onDeleted={(id) => {
+            setMetrics((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    recent_posts: prev.recent_posts.filter((p) => p.id !== id),
+                    total_posts: Math.max(0, prev.total_posts - 1),
+                  }
+                : prev
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -37,6 +37,7 @@ import RichTextRenderer from '@/components/ui/RichTextRenderer';
 import AttachmentManager from '@/components/ui/AttachmentManager';
 import AttachmentList from '@/components/ui/AttachmentList';
 import MediaPickerModal from '@/components/composer/MediaPickerModal';
+import { formatHandle } from '@/lib/format';
 import SocialIcon from '@/components/ui/SocialIcon';
 
 function formatDateTimeLocal(d: Date): string {
@@ -354,7 +355,7 @@ export default function CalendarEventDetailModal({
                         >
                           <SocialIcon platform={acc.platform} size={13} />
                           <span>{acc.account_name}</span>
-                          <span className="text-slate-400 text-[10.5px]">(@{acc.account_handle || acc.account_name})</span>
+                          <span className="text-slate-400 text-[10.5px]">({formatHandle(acc.account_handle || acc.account_name)})</span>
                         </span>
                       ))}
                     </div>
@@ -366,7 +367,7 @@ export default function CalendarEventDetailModal({
                     caption={event.caption || event.title}
                     media={event.media || []}
                     accountName={event.accounts?.[0]?.account_name || 'PT Wijaya Inovasi Gemilang'}
-                    accountHandle={event.accounts?.[0]?.account_handle || 'wijaya_official'}
+                    accountHandle={formatHandle(event.accounts?.[0]?.account_handle) || 'wijaya_official'}
                     avatarUrl={event.accounts?.[0]?.avatar_url}
                     firstComment={event.first_comment}
                     scheduledAt={event.start}
@@ -528,7 +529,7 @@ export default function CalendarEventDetailModal({
                                 )}
                               </div>
                               <span className="font-semibold text-xs truncate">
-                                {account.account_name} (@{account.account_handle})
+                                {account.account_name} ({formatHandle(account.account_handle)})
                               </span>
                             </div>
                             {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
