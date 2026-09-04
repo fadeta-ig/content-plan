@@ -138,9 +138,9 @@ export default function AccountsPage() {
           const result = await api.disconnectAccount(id);
           setAccounts((prev) => prev.filter((a) => a.id !== id));
           if (result.revocation_confirmed) {
-            toast.warning('Saluran Diputuskan', result.message);
+            toast.success('Saluran Berhasil Dilepas', result.message);
           } else {
-            toast.warning('Perlu Tindakan di Platform', result.message);
+            toast.info('Saluran Dilepas', result.message);
           }
         } catch (error) {
           toast.error(

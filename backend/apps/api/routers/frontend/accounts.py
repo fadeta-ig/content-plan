@@ -174,10 +174,15 @@ def disconnect_social_account(request: HttpRequest, account_id: uuid.UUID):
     except Exception:
         logger.warning("Provider untuk pencabutan token akun %s tidak tersedia", account.id, exc_info=True)
 
+    is_manual = not bool(account.oauth_access_token)
     revocation_confirmed = disconnect_account_service(account, provider)
-    message = (
-        "Akun dilepas dan token berhasil dicabut dari platform."
-        if revocation_confirmed
-        else "Akun dilepas dari sistem, tetapi pencabutan token di platform belum terkonfirmasi. Cabut akses aplikasi dari pengaturan platform."
-    )
+    account_label = account.account_name or account.account_handle or "media sosial"
+    if is_manual:
+        revocation_confirmed = True
+        message = f"Saluran {account_label} berhasil dilepas dari workspace."
+    elif revocation_confirmed:
+        message = f"Saluran {account_label} dilepas dan token berhasil dicabut dari platform."
+    else:
+        message = f"Saluran {account_label} dilepas dari sistem, tetapi pencabutan token di platform belum terkonfirmasi. Cabut akses aplikasi dari pengaturan platform jika diperlukan."
+
     return {"success": True, "message": message, "revocation_confirmed": revocation_confirmed}
