@@ -49,6 +49,7 @@ export default function KanbanPage() {
   const [selectedPreview, setSelectedPreview] = useState<{
     card: KanbanCard;
     columnId: string;
+    initialEdit?: boolean;
   } | null>(null);
 
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
@@ -375,7 +376,7 @@ export default function KanbanPage() {
                       columnId={col.id}
                       onDragStart={handleDragStart}
                       onDragEnd={handleDragEnd}
-                      onOpenPreview={(c, colId) => setSelectedPreview({ card: c, columnId: colId })}
+                      onOpenPreview={(c, colId, initialEdit) => setSelectedPreview({ card: c, columnId: colId, initialEdit })}
                       onMoveStatus={handleMoveStatus}
                       onDelete={handleDeleteCard}
                     />
@@ -404,6 +405,7 @@ export default function KanbanPage() {
         <IdeaPreviewModal
           idea={selectedPreview.card}
           columnId={selectedPreview.columnId}
+          initialEdit={selectedPreview.initialEdit}
           onClose={() => setSelectedPreview(null)}
           onUpdateIdea={handleUpdateIdeaCard}
           onDeleteIdea={handleDeleteCard}

@@ -9,31 +9,24 @@ import {
   Plus,
   Clock,
   Filter,
-  X,
   Clapperboard,
   MapPin,
-  Users,
-  CheckSquare,
-  Square,
-  Sparkles,
-  Trash2,
-  Share2,
   RefreshCw,
-  Paperclip,
+  Sparkles,
+  Share2,
 } from 'lucide-react';
 import { api, getErrorMessage } from '@/lib/api';
 import {
   CalendarEvent,
   KanbanColumn,
-  ShootingCrewMember,
-  ShootingEquipmentItem,
-  AttachmentItem,
+  SocialAccount,
 } from '@/lib/types';
 import SocialIcon from '@/components/ui/SocialIcon';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
-import AttachmentManager from '@/components/ui/AttachmentManager';
 import AttachmentList from '@/components/ui/AttachmentList';
+import CalendarScheduleModal from '@/components/calendar/CalendarScheduleModal';
+import CalendarEventDetailModal from '@/components/calendar/CalendarEventDetailModal';
 
 const DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const DAYS_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -51,11 +44,6 @@ const SHOOTING_STATUS_CONFIG: Record<string, { label: string; badgeClass: string
   cancelled: { label: 'Dibatalkan', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
 };
 
-function formatDateTimeLocal(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 export default function CalendarPage() {
   const toast = useToast();
   const { confirm } = useConfirm();
@@ -67,137 +55,62 @@ export default function CalendarPage() {
   const [selectedDayNumber, setSelectedDayNumber] = useState<number | null>(() => new Date().getDate());
   const [filterType, setFilterType] = useState<'all' | 'post' | 'shooting'>('all');
   const [filterPlatform, setFilterPlatform] = useState<string>('all');
+  const [filterAccountId, setFilterAccountId] = useState<string>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState('');
+
+  // Connected Social Accounts (Poin 4!)
+  const [connectedAccounts, setConnectedAccounts] = useState<SocialAccount[]>([]);
 
   // Selected Detail Modal / Inspector
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
   // Unified Schedule Modal state
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [activeScheduleTab, setActiveScheduleTab] = useState<'post' | 'shooting'>('post');
-
-  // Kanban Ideas for shooting & post pre-fill
+  const [scheduleModalTab, setScheduleModalTab] = useState<'post' | 'shooting'>('post');
   const [kanbanIdeas, setKanbanIdeas] = useState<{ id: string; title: string; content?: string }[]>([]);
-  const [selectedIdeaId, setSelectedIdeaId] = useState<string>('');
-  const [postSelectedIdeaId, setPostSelectedIdeaId] = useState<string>('');
-
-  // Post Schedule Form state
-  const [postCaption, setPostCaption] = useState('');
-  const [postDate, setPostDate] = useState(() => {
-    const d = new Date();
-    d.setHours(10, 0, 0, 0);
-    return formatDateTimeLocal(d);
-  });
-  const [postPlatform, setPostPlatform] = useState('instagram');
-
-  // Shooting Session Form state
-  const [shootTitle, setShootTitle] = useState('');
-  const [shootLocation, setShootLocation] = useState('');
-  const [shootScheduledAt, setShootScheduledAt] = useState(() => {
-    const d = new Date();
-    d.setHours(14, 0, 0, 0);
-    return formatDateTimeLocal(d);
-  });
-  const [shootEndAt, setShootEndAt] = useState(() => {
-    const d = new Date();
-    d.setHours(17, 0, 0, 0);
-    return formatDateTimeLocal(d);
-  });
-  const [shootDescription, setShootDescription] = useState('');
-  const [shootStatus, setShootStatus] = useState<string>('planned');
-  const [shootAttachments, setShootAttachments] = useState<AttachmentItem[]>([]);
-  
-  // Crew & Equipment state in modal
-  const [crewList, setCrewList] = useState<ShootingCrewMember[]>([
-    { name: '', role: 'Videografer' },
-  ]);
-  const [newCrewName, setNewCrewName] = useState('');
-  const [newCrewRole, setNewCrewRole] = useState('Talent / Host');
-  
-  const [equipmentList] = useState<ShootingEquipmentItem[]>([
-    { item: 'Kamera Utama (Sony A7IV)', checked: true },
-    { item: 'Mic Wireless Clip-on', checked: true },
-    { item: 'Lighting Softbox & RGB', checked: false },
-  ]);
-  const [loadError, setLoadError] = useState('');
-  const scheduleDialogRef = useRef<HTMLDivElement>(null);
-  const eventDialogRef = useRef<HTMLDivElement>(null);
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const [prefilledPostIdeaId, setPrefilledPostIdeaId] = useState('');
+  const [prefilledShootIdeaId, setPrefilledShootIdeaId] = useState('');
+  const [prefilledPostCaption, setPrefilledPostCaption] = useState('');
+  const [prefilledShootTitle, setPrefilledShootTitle] = useState('');
+  const [prefilledShootDescription, setPrefilledShootDescription] = useState('');
 
   // Drag-and-drop state
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
-  const selectedEventId = selectedEvent?.id;
-
-  useEffect(() => {
-    if (!isScheduleModalOpen && !selectedEventId) return;
-    const activeDialogRef = isScheduleModalOpen ? scheduleDialogRef : eventDialogRef;
-    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const focusTimer = window.setTimeout(() => {
-      activeDialogRef.current?.querySelector<HTMLElement>('[data-modal-initial-focus]')?.focus();
-    }, 0);
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (document.querySelectorAll('[role="dialog"][aria-modal="true"]').length > 1) return;
-      if (event.key === 'Escape') {
-        setIsScheduleModalOpen(false);
-        setSelectedEvent(null);
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const focusable = activeDialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
-      if (!focusable?.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.clearTimeout(focusTimer);
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      previouslyFocusedRef.current?.focus();
-    };
-  }, [isScheduleModalOpen, selectedEventId]);
   const dragDataRef = useRef<{ eventId: string; originalDate: string; eventType: 'post' | 'shooting' } | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
+  // Load Connected Social Accounts
+  const loadAccounts = useCallback(async () => {
+    try {
+      const data = await api.getSocialAccounts();
+      if (data && data.accounts) {
+        setConnectedAccounts(data.accounts);
+      }
+    } catch {
+      // Non-blocking fallback
+    }
+  }, []);
+
+  // Load Calendar Events & Kanban Ideas
   const loadCalendarData = useCallback(async () => {
     setIsLoading(true);
     setLoadError('');
     try {
       const startDate = new Date(year, month - 1, 1).toISOString();
       const endDate = new Date(year, month + 2, 0).toISOString();
-      
-      const calData = await api.getCalendarEvents({ start_date: startDate, end_date: endDate });
-      let kanbanData: { columns: KanbanColumn[] } = { columns: [] };
-      try {
-        kanbanData = await api.getKanbanIdeas();
-      } catch (error) {
-        setKanbanIdeas([]);
-        toast.warning(
-          'Ide Kanban Tidak Dimuat',
-          error instanceof Error && error.message
-            ? error.message
-            : 'Kalender tetap tersedia, tetapi daftar ide terkait belum dapat dimuat.'
-        );
-      }
+
+      const [calData, kanbanData] = await Promise.all([
+        api.getCalendarEvents({ start_date: startDate, end_date: endDate }),
+        api.getKanbanIdeas().catch(() => ({ columns: [] as KanbanColumn[] })),
+      ]);
 
       if (calData && calData.events) {
         setEvents(calData.events);
       }
+
       if (kanbanData && kanbanData.columns) {
         const allCards = kanbanData.columns.flatMap((column) => column.cards || []);
         setKanbanIdeas(allCards);
@@ -209,17 +122,17 @@ export default function CalendarPage() {
           const found = allCards.find((card) => card.id === paramIdeaId);
           if (found) {
             if (paramAction === 'shoot') {
-              setSelectedIdeaId(found.id);
-              setShootTitle(found.title);
-              if (found.content) setShootDescription(found.content);
-              setActiveScheduleTab('shooting');
+              setPrefilledShootIdeaId(found.id);
+              setPrefilledShootTitle(found.title);
+              if (found.content) setPrefilledShootDescription(found.content);
+              setScheduleModalTab('shooting');
             } else {
-              setPostSelectedIdeaId(found.id);
+              setPrefilledPostIdeaId(found.id);
               const initialText = found.content
                 ? `${found.title}\n\n${found.content}`
                 : found.title;
-              setPostCaption(initialText);
-              setActiveScheduleTab('post');
+              setPrefilledPostCaption(initialText);
+              setScheduleModalTab('post');
             }
             setIsScheduleModalOpen(true);
           }
@@ -237,7 +150,8 @@ export default function CalendarPage() {
 
   useEffect(() => {
     void loadCalendarData();
-  }, [loadCalendarData]);
+    void loadAccounts();
+  }, [loadCalendarData, loadAccounts]);
 
   // Calendar cells generation
   const firstDayIndex = new Date(year, month, 1).getDay();
@@ -263,37 +177,36 @@ export default function CalendarPage() {
     const today = new Date();
     setCurrentDate(today);
     setSelectedDayNumber(today.getDate());
-    const targetDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 10, 0, 0);
-    setPostDate(formatDateTimeLocal(targetDate));
-    setShootScheduledAt(formatDateTimeLocal(targetDate));
   };
 
-  // Date selection & auto-prefill handler
   const handleDateClick = (dayNumber: number, openModal: boolean = false) => {
     setSelectedDayNumber(dayNumber);
-    const targetDate = new Date(year, month, dayNumber, 10, 0, 0);
-    const targetShootEnd = new Date(year, month, dayNumber, 13, 0, 0);
-
-    const formattedStart = formatDateTimeLocal(targetDate);
-    const formattedEnd = formatDateTimeLocal(targetShootEnd);
-
-    setPostDate(formattedStart);
-    setShootScheduledAt(formattedStart);
-    setShootEndAt(formattedEnd);
-
     if (openModal) {
+      setPrefilledPostCaption('');
+      setPrefilledPostIdeaId('');
+      setPrefilledShootTitle('');
+      setPrefilledShootDescription('');
+      setPrefilledShootIdeaId('');
       setIsScheduleModalOpen(true);
     }
   };
 
-  // Filtered events
+  // Filtered events based on Type, Platform, and Specific Account (Poin 4!)
   const filteredEvents = events.filter((ev) => {
     if (filterType === 'post' && ev.type === 'shooting') return false;
     if (filterType === 'shooting' && ev.type !== 'shooting') return false;
 
+    // Filter by platform
     if (filterPlatform !== 'all') {
       if (ev.type === 'shooting') return filterPlatform === 'shooting';
       return ev.platforms && ev.platforms.includes(filterPlatform);
+    }
+
+    // Filter by specific account
+    if (filterAccountId !== 'all') {
+      if (ev.type === 'shooting') return false;
+      if (!ev.accounts || ev.accounts.length === 0) return false;
+      return ev.accounts.some((acc) => acc.id === filterAccountId || acc.account_handle === filterAccountId);
     }
 
     return true;
@@ -307,7 +220,7 @@ export default function CalendarPage() {
       })
     : filteredEvents;
 
-  // --- Drag-and-Drop Handlers ---
+  // Drag-and-drop Handlers
   const handleEventDragStart = (e: React.DragEvent, event: CalendarEvent) => {
     dragDataRef.current = {
       eventId: event.id,
@@ -385,109 +298,12 @@ export default function CalendarPage() {
         );
       }
     } catch (error: unknown) {
-      // Rollback on error
       setEvents((prev) =>
         prev.map((ev) => (ev.id === eventId ? { ...ev, start: originalDate } : ev))
       );
       toast.error('Gagal Memindahkan Jadwal', getErrorMessage(error, 'Terjadi kesalahan saat memindahkan jadwal.'));
     } finally {
       dragDataRef.current = null;
-    }
-  };
-
-  // Submit Social Post Handler
-  const handlePostSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!postCaption.trim()) {
-      toast.error('Validasi Gagal', 'Caption atau judul postingan tidak boleh kosong.');
-      return;
-    }
-
-    try {
-      const linkedIdea = kanbanIdeas.find((i) => i.id === postSelectedIdeaId);
-
-      const res = await api.createPost({
-        master_caption: postCaption,
-        target_account_ids: [postPlatform],
-        scheduled_at: postDate,
-        related_idea_id: postSelectedIdeaId || undefined,
-      });
-
-      const newEv: CalendarEvent = {
-        id: res.post_id || `post-${Date.now()}`,
-        type: 'post',
-        title: postCaption,
-        caption: postCaption,
-        start: postDate,
-        platforms: [postPlatform],
-        status: 'scheduled',
-        related_idea_id: postSelectedIdeaId || null,
-        related_idea_title: linkedIdea?.title || null,
-      };
-
-      setEvents((prev) => [...prev, newEv]);
-      toast.success('Jadwal Ditambahkan', 'Postingan media sosial berhasil dijadwalkan.');
-      setIsScheduleModalOpen(false);
-      setPostCaption('');
-      setPostSelectedIdeaId('');
-    } catch (error: unknown) {
-      toast.error('Gagal Menjadwalkan', getErrorMessage(error, 'Tidak dapat menyimpan postingan ke server.'));
-    }
-  };
-
-  // Submit Shooting Session Handler
-  const handleShootingSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!shootTitle.trim()) {
-      toast.error('Validasi Gagal', 'Judul rencana sesi shooting wajib diisi.');
-      return;
-    }
-
-    try {
-      const cleanCrew = crewList.filter((c) => c.name.trim().length > 0);
-      const cleanEquipment = equipmentList.filter((eq) => eq.item.trim().length > 0);
-
-      const res = await api.createShootingSession({
-        title: shootTitle,
-        description: shootDescription,
-        location: shootLocation,
-        scheduled_at: shootScheduledAt,
-        end_at: shootEndAt || undefined,
-        status: shootStatus,
-        crew_members: cleanCrew,
-        equipment_checklist: cleanEquipment,
-        attachments: shootAttachments,
-        related_idea_id: selectedIdeaId || null,
-      });
-
-      const newSession = res.session;
-      const newEv: CalendarEvent = {
-        id: newSession?.id || `shoot-${Date.now()}`,
-        type: 'shooting',
-        title: shootTitle,
-        description: shootDescription,
-        location: shootLocation,
-        start: shootScheduledAt,
-        end: shootEndAt,
-        status: shootStatus,
-        crew_members: cleanCrew,
-        equipment_checklist: cleanEquipment,
-        attachments: shootAttachments,
-        related_idea_id: newSession?.related_idea_id || selectedIdeaId || null,
-        related_idea_title: newSession?.related_idea_title || (kanbanIdeas.find(i => i.id === selectedIdeaId)?.title) || null,
-        platforms: ['shooting'],
-      };
-
-      setEvents((prev) => [...prev, newEv]);
-      toast.success('Sesi Shooting Dibuat', `Rencana shooting "${shootTitle}" berhasil disimpan.`);
-      setIsScheduleModalOpen(false);
-      setShootTitle('');
-      setShootDescription('');
-      setShootLocation('');
-      setSelectedIdeaId('');
-      setShootAttachments([]);
-    } catch (error: unknown) {
-      toast.error('Gagal Menyimpan Shooting', getErrorMessage(error, 'Gagal menyimpan sesi shooting.'));
     }
   };
 
@@ -513,22 +329,22 @@ export default function CalendarPage() {
   };
 
   // Delete Event Handler
-  const handleDeleteEvent = async (event: CalendarEvent) => {
+  const handleDeleteEvent = async (eventToDelete: CalendarEvent) => {
     confirm({
-      title: event.type === 'shooting' ? 'Hapus Sesi Shooting?' : 'Hapus Postingan Terjadwal?',
-      message: `Apakah Anda yakin ingin menghapus "${event.title}"? Tindakan ini tidak dapat dibatalkan.`,
+      title: eventToDelete.type === 'shooting' ? 'Hapus Sesi Shooting?' : 'Hapus Postingan Terjadwal?',
+      message: `Apakah Anda yakin ingin menghapus "${eventToDelete.title}"? Tindakan ini tidak dapat dibatalkan.`,
       confirmText: 'Ya, Hapus',
       type: 'danger',
       onConfirm: async () => {
         try {
-          if (event.type === 'shooting') {
-            await api.deleteShootingSession(event.id);
-            toast.success('Berhasil Dihapus', 'Sesi shooting telah dihapus.');
+          if (eventToDelete.type === 'shooting') {
+            await api.deleteShootingSession(eventToDelete.id);
+            toast.success('Berhasil Dihapus', 'Sesi shooting telah dihapus dari kalender.');
           } else {
-            await api.deletePost(event.id);
+            await api.deletePost(eventToDelete.id);
             toast.success('Berhasil Dihapus', 'Postingan telah dihapus dari kalender.');
           }
-          setEvents((prev) => prev.filter((ev) => ev.id !== event.id));
+          setEvents((prev) => prev.filter((ev) => ev.id !== eventToDelete.id));
           setSelectedEvent(null);
         } catch (error: unknown) {
           toast.error('Gagal Menghapus', getErrorMessage(error, 'Jadwal belum berhasil dihapus.'));
@@ -541,26 +357,26 @@ export default function CalendarPage() {
   const isCurrentMonthThisMonth = todayObj.getMonth() === month && todayObj.getFullYear() === year;
 
   return (
-    <div className="space-y-3 max-w-full">
-      {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs">
+    <div className="space-y-3.5 max-w-full">
+      {/* Header & Month Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-md bg-slate-900 text-white flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center">
             <CalendarIcon className="w-4 h-4 text-slate-100" />
           </div>
           <div>
             <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
-              Kalender Konten & Sesi Shooting
+              Kalender Konten &amp; Sesi Shooting
             </h1>
             <p className="text-[11px] text-slate-500">
-              Jadwal postingan media sosial dan rencana produksi shooting studio.
+              Jadwal postingan media sosial per-akun dan rencana produksi shooting studio.
             </p>
           </div>
         </div>
 
         {/* Month Navigation & Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-          <div className="flex items-center bg-slate-50 rounded-md border border-slate-200 p-0.5">
+          <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 p-0.5">
             <button
               type="button"
               onClick={prevMonth}
@@ -589,7 +405,7 @@ export default function CalendarPage() {
           <button
             type="button"
             onClick={() => handleDateClick(selectedDayNumber || todayObj.getDate(), true)}
-            className="ui-btn ui-btn-primary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5"
+            className="ui-btn ui-btn-primary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 shadow-xs"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Tambah Jadwal</span>
@@ -607,45 +423,54 @@ export default function CalendarPage() {
       )}
 
       {isLoading && (
-        <div className="ui-card py-6 text-center text-xs text-slate-500" role="status">Memuat kalender dan sesi shooting...</div>
+        <div className="ui-card py-6 text-center text-xs text-slate-500" role="status">
+          Memuat kalender dan sesi shooting...
+        </div>
       )}
 
-      {/* Filter Bar */}
-      <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2.5 text-xs">
+      {/* Filter Bar with Type, Platform, and Specific Social Account (Poin 4!) */}
+      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[11px] font-semibold text-slate-500 mr-1 flex items-center gap-1">
             <Filter className="w-3 h-3 text-slate-400" />
             <span>Filter:</span>
           </span>
+
           <button
             type="button"
-            onClick={() => setFilterType('all')}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition ${
-              filterType === 'all'
-                ? 'bg-slate-900 text-white font-semibold'
+            onClick={() => {
+              setFilterType('all');
+              setFilterAccountId('all');
+              setFilterPlatform('all');
+            }}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+              filterType === 'all' && filterAccountId === 'all' && filterPlatform === 'all'
+                ? 'bg-slate-900 text-white font-semibold shadow-2xs'
                 : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
             }`}
           >
             Semua ({events.length})
           </button>
+
           <button
             type="button"
             onClick={() => setFilterType('post')}
-            className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
+            className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition ${
               filterType === 'post'
-                ? 'bg-slate-900 text-white font-semibold'
+                ? 'bg-slate-900 text-white font-semibold shadow-2xs'
                 : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
             }`}
           >
             <Share2 className="w-3 h-3" />
             <span>Post Medsos ({events.filter((e) => e.type !== 'shooting').length})</span>
           </button>
+
           <button
             type="button"
             onClick={() => setFilterType('shooting')}
-            className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
+            className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5 transition ${
               filterType === 'shooting'
-                ? 'bg-slate-900 text-white font-semibold'
+                ? 'bg-slate-900 text-white font-semibold shadow-2xs'
                 : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
             }`}
           >
@@ -654,16 +479,42 @@ export default function CalendarPage() {
           </button>
         </div>
 
-        {/* Platform Filter Pills */}
-        <div className="flex items-center gap-1 flex-wrap">
-          {['all', 'instagram', 'tiktok', 'linkedin', 'facebook', 'youtube'].map((plat) => (
+        {/* Account & Platform Filter Pills (Poin 4!) */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Filter per Akun Spesifik */}
+          {connectedAccounts.length > 0 && (
+            <div className="flex items-center gap-1 border-r border-slate-200 pr-2 mr-1">
+              <span className="text-[10.5px] font-bold text-slate-400 mr-1 hidden sm:inline">Akun:</span>
+              <select
+                value={filterAccountId}
+                onChange={(e) => {
+                  setFilterAccountId(e.target.value);
+                  setFilterPlatform('all');
+                }}
+                className="text-[11px] font-medium p-1 bg-slate-50 border border-slate-200 rounded-md text-slate-700 focus:outline-none"
+              >
+                <option value="all">Semua Akun ({connectedAccounts.length})</option>
+                {connectedAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    @{acc.account_handle || acc.account_name} ({acc.platform})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Platform Pills */}
+          {['all', 'instagram', 'tiktok', 'linkedin', 'facebook'].map((plat) => (
             <button
               key={plat}
               type="button"
-              onClick={() => setFilterPlatform(plat)}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition ${
-                filterPlatform === plat
-                  ? 'bg-slate-800 text-white font-semibold'
+              onClick={() => {
+                setFilterPlatform(plat);
+                setFilterAccountId('all');
+              }}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium flex items-center gap-1 transition ${
+                filterPlatform === plat && filterAccountId === 'all'
+                  ? 'bg-slate-800 text-white font-semibold shadow-2xs'
                   : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
               }`}
             >
@@ -680,10 +531,10 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Main 2-Column Split: Calendar (Left) & Dedicated Day Inspector (Right) */}
+      {/* Main 2-Column Split: Calendar (Left) & Day Inspector (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-start">
         {/* Left Column: Calendar Grid (8 Cols) */}
-        <div className="lg:col-span-8 ui-card p-0 overflow-hidden border border-slate-200 rounded-lg bg-white shadow-xs">
+        <div className="lg:col-span-8 ui-card p-0 overflow-hidden border border-slate-200 rounded-xl bg-white shadow-xs">
           {/* Days Header */}
           <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center py-2 text-xs font-semibold text-slate-600">
             {DAYS.map((dayName, idx) => (
@@ -744,7 +595,7 @@ export default function CalendarPage() {
                   onDragOver={(e) => (cell.isCurrent ? handleCellDragOver(e, cell.day) : undefined)}
                   onDragLeave={cell.isCurrent ? handleCellDragLeave : undefined}
                   onDrop={(e) => (cell.isCurrent ? handleCellDrop(e, cell.day) : undefined)}
-                  className={`h-20 sm:h-24 p-1.5 flex flex-col justify-between cursor-pointer transition-all duration-150 relative group select-none ${
+                  className={`h-22 sm:h-26 p-1.5 flex flex-col justify-between cursor-pointer transition-all duration-150 relative group select-none ${
                     !cell.isCurrent
                       ? 'bg-slate-50/40 opacity-30 cursor-default'
                       : isDragTarget
@@ -789,10 +640,11 @@ export default function CalendarPage() {
                     )}
                   </div>
 
-                  {/* Cell Events Badges (Draggable) */}
-                  <div className="space-y-1 overflow-y-auto max-h-[50px] sm:max-h-[60px] pr-0.5">
+                  {/* Cell Events Badges (Draggable) with Account Info (Poin 4!) */}
+                  <div className="space-y-1 overflow-y-auto max-h-[58px] sm:max-h-[68px] pr-0.5">
                     {cellEvents.slice(0, 2).map((ev) => {
                       const isShooting = ev.type === 'shooting';
+                      const primaryAccount = ev.accounts && ev.accounts.length > 0 ? ev.accounts[0] : null;
 
                       return (
                         <div
@@ -814,10 +666,10 @@ export default function CalendarPage() {
                           role="button"
                           tabIndex={0}
                           aria-label={`Buka detail ${ev.title}`}
-                          className={`px-1.5 py-0.5 rounded border text-[10px] leading-tight transition cursor-grab active:cursor-grabbing truncate flex items-center gap-1 ${
+                          className={`px-1.5 py-0.5 rounded-md border text-[10px] leading-tight transition cursor-grab active:cursor-grabbing truncate flex items-center gap-1 ${
                             isShooting
                               ? 'bg-slate-100 border-slate-300 text-slate-900 font-semibold'
-                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 shadow-2xs'
                           }`}
                           title={`${ev.title} (Geser untuk pindah)`}
                         >
@@ -831,7 +683,11 @@ export default function CalendarPage() {
                             </div>
                           )}
 
+                          {/* Account Handle or Title */}
                           <span className="truncate flex-1 font-medium text-[9.5px]">
+                            {!isShooting && primaryAccount?.account_handle ? (
+                              <strong className="text-slate-900 mr-0.5">@{primaryAccount.account_handle}:</strong>
+                            ) : null}
                             {ev.title}
                           </span>
                         </div>
@@ -852,7 +708,7 @@ export default function CalendarPage() {
 
         {/* Right Column: Dedicated Day Agenda & Inspector Panel (4 Cols) */}
         <div className="lg:col-span-4 space-y-3">
-          <div className="ui-card p-3.5 space-y-3 bg-white border border-slate-200 rounded-lg shadow-xs">
+          <div className="ui-card p-3.5 space-y-3 bg-white border border-slate-200 rounded-xl shadow-xs">
             {/* Selected Date Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
               <div className="flex items-center gap-2">
@@ -872,7 +728,7 @@ export default function CalendarPage() {
               <button
                 type="button"
                 onClick={() => handleDateClick(selectedDayNumber || todayObj.getDate(), true)}
-                className="ui-btn ui-btn-secondary py-1 px-2 text-[11px] font-medium flex items-center gap-1"
+                className="ui-btn ui-btn-secondary py-1 px-2.5 text-[11px] font-medium flex items-center gap-1"
               >
                 <Plus className="w-3 h-3" />
                 <span>Tambah</span>
@@ -880,7 +736,7 @@ export default function CalendarPage() {
             </div>
 
             {/* Agenda List for Selected Day */}
-            <div className="space-y-2 max-h-[460px] overflow-y-auto pr-0.5">
+            <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-0.5">
               {activeDateEvents.length > 0 ? (
                 activeDateEvents.map((ev) => {
                   const isShooting = ev.type === 'shooting';
@@ -890,7 +746,7 @@ export default function CalendarPage() {
                     <div
                       key={ev.id}
                       onClick={() => setSelectedEvent(ev)}
-                      className="p-2.5 rounded-md border border-slate-200 hover:border-slate-300 hover:bg-slate-50/70 transition cursor-pointer space-y-1.5 text-xs bg-white shadow-2xs"
+                      className="p-3 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50/70 transition cursor-pointer space-y-2 text-xs bg-white shadow-2xs"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
@@ -909,15 +765,30 @@ export default function CalendarPage() {
                         </div>
 
                         {isShooting ? (
-                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-semibold border ${shootConf.badgeClass}`}>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${shootConf.badgeClass}`}>
                             {shootConf.label}
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
                             {ev.platforms.join(', ').toUpperCase()}
                           </span>
                         )}
                       </div>
+
+                      {/* Account Badges per Post (Poin 4!) */}
+                      {!isShooting && ev.accounts && ev.accounts.length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {ev.accounts.map((acc) => (
+                            <span
+                              key={acc.id}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-[10px] font-medium text-slate-800 border border-slate-200"
+                            >
+                              <SocialIcon platform={acc.platform} size={9} />
+                              <span>@{acc.account_handle || acc.account_name}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Time & Location */}
                       <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
@@ -949,9 +820,9 @@ export default function CalendarPage() {
                         </div>
                       )}
 
-                      {/* Brief description snippet */}
+                      {/* Caption snippet */}
                       {(ev.caption || ev.description) && (
-                        <p className="text-[10.5px] text-slate-600 line-clamp-2 bg-slate-50 p-1.5 rounded border border-slate-100">
+                        <p className="text-[10.5px] text-slate-600 line-clamp-2 bg-slate-50 p-2 rounded-lg border border-slate-100 leading-relaxed font-sans">
                           {ev.caption || ev.description}
                         </p>
                       )}
@@ -966,13 +837,13 @@ export default function CalendarPage() {
                   );
                 })
               ) : (
-                <div className="py-8 text-center text-slate-400 space-y-2">
-                  <CalendarIcon className="w-6 h-6 mx-auto text-slate-300" />
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <CalendarIcon className="w-7 h-7 mx-auto text-slate-300" />
                   <p className="text-xs">Tidak ada agenda pada tanggal ini.</p>
                   <button
                     type="button"
                     onClick={() => handleDateClick(selectedDayNumber || todayObj.getDate(), true)}
-                    className="text-[11px] font-semibold text-slate-800 hover:underline"
+                    className="text-xs font-semibold text-slate-800 hover:underline"
                   >
                     + Tambah Jadwal Sekarang
                   </button>
@@ -984,596 +855,40 @@ export default function CalendarPage() {
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL 1: UNIFIED SCHEDULE MODAL (Tabs: Social Post & Shooting Session)   */}
+      {/* MODAL 1: UNIFIED SCHEDULE MODAL (Rich Editor, Media, GDocs, Accounts)     */}
       {/* ========================================================================= */}
-      {isScheduleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div
-            ref={scheduleDialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="schedule-agenda-title"
-            className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto"
-          >
-            {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded bg-slate-900 text-white flex items-center justify-center">
-                  <Plus className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <h2 id="schedule-agenda-title" className="text-xs font-bold text-slate-900">Tambah Agenda</h2>
-                  <p className="text-[10px] text-slate-500">
-                    Dijadwalkan untuk tanggal: {selectedDayNumber} {MONTH_NAMES[month]} {year}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsScheduleModalOpen(false)}
-                aria-label="Tutup formulir tambah agenda"
-                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Tab Selector */}
-            <div className="flex border-b border-slate-200 bg-slate-100/60 p-1 text-xs">
-              <button
-                type="button"
-                onClick={() => setActiveScheduleTab('post')}
-                aria-pressed={activeScheduleTab === 'post'}
-                className={`flex-1 py-1.5 rounded text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
-                  activeScheduleTab === 'post'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                <span>Postingan Media Sosial</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveScheduleTab('shooting')}
-                aria-pressed={activeScheduleTab === 'shooting'}
-                className={`flex-1 py-1.5 rounded text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
-                  activeScheduleTab === 'shooting'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Clapperboard className="w-3.5 h-3.5" />
-                <span>Rencana Sesi Shooting</span>
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4">
-              {activeScheduleTab === 'post' ? (
-                /* TAB 1: SOCIAL POST FORM */
-                <form onSubmit={handlePostSubmit} className="space-y-3">
-                  {/* Kanban Idea / Brief Selector for Social Posts */}
-                  {kanbanIdeas.length > 0 && (
-                    <div className="p-2.5 bg-blue-50/60 rounded-xl border border-blue-200/80 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label htmlFor="schedule-post-kanban-idea" className="text-[11px] font-bold text-blue-950 flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                          <span>Ambil dari Ide / Brief Kanban (Opsional)</span>
-                        </label>
-                        {postSelectedIdeaId && (
-                          <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-semibold border border-blue-200">
-                            Tersinkronisasi
-                          </span>
-                        )}
-                      </div>
-                      <select
-                        id="schedule-post-kanban-idea"
-                        value={postSelectedIdeaId}
-                        onChange={(e) => {
-                          const id = e.target.value;
-                          setPostSelectedIdeaId(id);
-                          if (id) {
-                            const found = kanbanIdeas.find((i) => i.id === id);
-                            if (found) {
-                              const initialText = found.content
-                                ? `${found.title}\n\n${found.content}`
-                                : found.title;
-                              setPostCaption(initialText);
-                            }
-                          }
-                        }}
-                        className="w-full text-xs p-1.5 rounded-lg border border-blue-200 bg-white focus:outline-none focus:border-blue-500 font-sans"
-                      >
-                        <option value="">-- Buat Postingan Baru (Tanpa Referensi Ide) --</option>
-                        {kanbanIdeas.map((idea) => (
-                          <option key={idea.id} value={idea.id}>
-                            💡 {idea.title}
-                          </option>
-                        ))}
-                      </select>
-                      {postSelectedIdeaId && (
-                        <p className="text-[10px] text-blue-800/80 leading-relaxed">
-                          Postingan ini akan otomatis ditandai terhubung dengan brief &ldquo;{kanbanIdeas.find(i => i.id === postSelectedIdeaId)?.title}&rdquo;.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  <div>
-                    <label htmlFor="schedule-post-caption" className="block text-xs font-semibold text-slate-700 mb-1">
-                      Konten / Caption Utama
-                    </label>
-                    <textarea
-                      id="schedule-post-caption"
-                      data-modal-initial-focus
-                      rows={3}
-                      value={postCaption}
-                      onChange={(e) => setPostCaption(e.target.value)}
-                      placeholder="Tulis draf caption konten..."
-                      className="w-full text-xs p-2 rounded-md border border-slate-200 focus:outline-none focus:border-slate-400 bg-slate-50 focus:bg-white"
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label htmlFor="schedule-post-platform" className="block text-xs font-semibold text-slate-700 mb-1">
-                        Saluran Target
-                      </label>
-                      <select
-                        id="schedule-post-platform"
-                        value={postPlatform}
-                        onChange={(e) => setPostPlatform(e.target.value)}
-                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
-                      >
-                        <option value="instagram">Instagram</option>
-                        <option value="tiktok">TikTok</option>
-                        <option value="linkedin">LinkedIn</option>
-                        <option value="facebook">Facebook</option>
-                        <option value="youtube">YouTube</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label htmlFor="schedule-post-time" className="block text-xs font-semibold text-slate-700 mb-1">
-                        Waktu Tayang (Otomatis)
-                      </label>
-                      <input
-                        id="schedule-post-time"
-                        type="datetime-local"
-                        value={postDate}
-                        onChange={(e) => setPostDate(e.target.value)}
-                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 font-mono"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsScheduleModalOpen(false)}
-                      className="ui-btn ui-btn-secondary py-1.5 text-xs"
-                    >
-                      Batal
-                    </button>
-                    <button
-                      type="submit"
-                      className="ui-btn ui-btn-primary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Jadwalkan Postingan</span>
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                /* TAB 2: SHOOTING SESSION FORM */
-                <form onSubmit={handleShootingSubmit} className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-                  {/* Kanban Idea Selector */}
-                  {kanbanIdeas.length > 0 && (
-                    <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
-                      <label htmlFor="schedule-kanban-idea" className="block text-[11px] font-bold text-slate-800 flex items-center gap-1">
-                        <Sparkles className="w-3 h-3 text-slate-700" />
-                        <span>Ambil dari Ide Kanban (Opsional)</span>
-                      </label>
-                      <select
-                        id="schedule-kanban-idea"
-                        value={selectedIdeaId}
-                        onChange={(e) => {
-                          const id = e.target.value;
-                          setSelectedIdeaId(id);
-                          if (id) {
-                            const found = kanbanIdeas.find((i) => i.id === id);
-                            if (found) {
-                              setShootTitle(found.title);
-                              if (found.content) setShootDescription(found.content);
-                            }
-                          }
-                        }}
-                        className="w-full text-xs p-1.5 rounded border border-slate-200 bg-white focus:outline-none"
-                      >
-                        <option value="">-- Buat Manual / Tanpa Tautan Ide --</option>
-                        {kanbanIdeas.map((idea) => (
-                          <option key={idea.id} value={idea.id}>
-                            {idea.title}
-                          </option>
-                        ))}
-                      </select>
-                      {selectedIdeaId && (
-                        <p className="text-[10px] text-slate-500 italic">
-                          Judul dan naskah/brief telah otomatis diselaraskan dari kartu Kanban.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  <div>
-                    <label htmlFor="shooting-title" className="block text-xs font-semibold text-slate-700 mb-1">
-                      Judul Sesi Shooting <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      id="shooting-title"
-                      data-modal-initial-focus
-                      type="text"
-                      value={shootTitle}
-                      onChange={(e) => setShootTitle(e.target.value)}
-                      placeholder="Contoh: Shooting Video Reels Edukasi Ep. 12"
-                      className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label htmlFor="shooting-location" className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Lokasi Shooting</span>
-                      </label>
-                      <input
-                        id="shooting-location"
-                        type="text"
-                        value={shootLocation}
-                        onChange={(e) => setShootLocation(e.target.value)}
-                        placeholder="Studio Utama WIG / Outdoor"
-                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="shooting-status" className="block text-xs font-semibold text-slate-700 mb-1">
-                        Status Produksi
-                      </label>
-                      <select
-                        id="shooting-status"
-                        value={shootStatus}
-                        onChange={(e) => setShootStatus(e.target.value)}
-                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
-                      >
-                        <option value="planned">Rencana</option>
-                        <option value="confirmed">Terkonfirmasi</option>
-                        <option value="in_progress">Sedang Berlangsung</option>
-                        <option value="completed">Selesai Shooting</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label htmlFor="shooting-start" className="block text-xs font-semibold text-slate-700 mb-1">
-                        Mulai Jam
-                      </label>
-                      <input
-                        id="shooting-start"
-                        type="datetime-local"
-                        value={shootScheduledAt}
-                        onChange={(e) => setShootScheduledAt(e.target.value)}
-                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 font-mono"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="shooting-end" className="block text-xs font-semibold text-slate-700 mb-1">
-                        Selesai Estimasi
-                      </label>
-                      <input
-                        id="shooting-end"
-                        type="datetime-local"
-                        value={shootEndAt}
-                        onChange={(e) => setShootEndAt(e.target.value)}
-                        className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="shooting-description" className="block text-xs font-semibold text-slate-700 mb-1">
-                      Brief & Catatan Produksi
-                    </label>
-                    <textarea
-                      id="shooting-description"
-                      rows={3}
-                      value={shootDescription}
-                      onChange={(e) => setShootDescription(e.target.value)}
-                      placeholder="Konsep visual, skrip singkat, alur video, atau catatan penting untuk tim..."
-                      className="w-full text-xs p-2 rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Crew & Equipment */}
-                  <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
-                      <Users className="w-3.5 h-3.5 text-slate-700" />
-                      <span>Kru & Talent Terlibat</span>
-                    </span>
-                    <div className="flex gap-1.5">
-                      <input
-                        type="text"
-                        aria-label="Nama kru atau talent"
-                        value={newCrewName}
-                        onChange={(e) => setNewCrewName(e.target.value)}
-                        placeholder="Nama kru / talent..."
-                        className="flex-1 text-xs p-1.5 rounded border border-slate-200 bg-white"
-                      />
-                      <input
-                        type="text"
-                        aria-label="Peran kru atau talent"
-                        value={newCrewRole}
-                        onChange={(e) => setNewCrewRole(e.target.value)}
-                        placeholder="Peran"
-                        className="w-28 text-xs p-1.5 rounded border border-slate-200 bg-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!newCrewName.trim()) return;
-                          setCrewList((prev) => [...prev, { name: newCrewName, role: newCrewRole }]);
-                          setNewCrewName('');
-                        }}
-                        className="px-2 py-1 bg-slate-900 text-white rounded text-xs font-medium hover:bg-slate-800"
-                      >
-                        + Tambah
-                      </button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1">
-                      {crewList.map((c, i) => (
-                        <span
-                          key={i}
-                          className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] text-slate-700 flex items-center gap-1"
-                        >
-                          <strong>{c.name}</strong> ({c.role})
-                          <button
-                            type="button"
-                            onClick={() => setCrewList((prev) => prev.filter((_, idx) => idx !== i))}
-                            aria-label={`Hapus ${c.name || 'anggota kru'} dari daftar`}
-                            className="text-slate-400 hover:text-rose-500 ml-0.5"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Attachment Manager for Shooting Session */}
-                  <div className="pt-2 border-t border-slate-200/80">
-                    <AttachmentManager
-                      attachments={shootAttachments}
-                      onChange={setShootAttachments}
-                      label="Call Sheet & Tautan Dokumen Shooting"
-                      helperText="Lampirkan Call Sheet PDF, script naskah, atau link Google Drive / Docs folder footage."
-                    />
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsScheduleModalOpen(false)}
-                      className="ui-btn ui-btn-secondary py-1.5 text-xs"
-                    >
-                      Batal
-                    </button>
-                    <button
-                      type="submit"
-                      className="ui-btn ui-btn-primary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5"
-                    >
-                      <Clapperboard className="w-3.5 h-3.5" />
-                      <span>Simpan Sesi Shooting</span>
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <CalendarScheduleModal
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        selectedDayNumber={selectedDayNumber}
+        month={month}
+        year={year}
+        kanbanIdeas={kanbanIdeas}
+        connectedAccounts={connectedAccounts}
+        initialTab={scheduleModalTab}
+        initialPostIdeaId={prefilledPostIdeaId}
+        initialShootIdeaId={prefilledShootIdeaId}
+        initialPostCaption={prefilledPostCaption}
+        initialShootTitle={prefilledShootTitle}
+        initialShootDescription={prefilledShootDescription}
+        onPostCreated={(newEv) => setEvents((prev) => [...prev, newEv])}
+        onShootingCreated={(newEv) => setEvents((prev) => [...prev, newEv])}
+      />
 
       {/* ========================================================================= */}
-      {/* MODAL 2: EVENT DETAIL INSPECTOR (Post & Shooting Session)                 */}
+      {/* MODAL 2: EVENT DETAIL INSPECTOR & INLINE EDITOR (Poin 2 & Poin 5!)        */}
       {/* ========================================================================= */}
-      {selectedEvent && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div
-            ref={eventDialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="calendar-event-detail-title"
-            className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto"
-          >
-            {/* Header */}
-            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded bg-slate-900 text-white flex items-center justify-center">
-                  {selectedEvent.type === 'shooting' ? (
-                    <Clapperboard className="w-3.5 h-3.5" />
-                  ) : (
-                    <Share2 className="w-3.5 h-3.5" />
-                  )}
-                </div>
-                <div>
-                  <h3 id="calendar-event-detail-title" className="text-xs font-bold text-slate-900">
-                    {selectedEvent.type === 'shooting'
-                      ? 'Detail Sesi Shooting'
-                      : 'Detail Postingan Terjadwal'}
-                  </h3>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    ID: {selectedEvent.id.slice(0, 16)}...
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                data-modal-initial-focus
-                onClick={() => setSelectedEvent(null)}
-                aria-label="Tutup detail agenda"
-                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-4 space-y-3 max-h-[65vh] overflow-y-auto text-xs">
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">{selectedEvent.title}</h4>
-                {selectedEvent.related_idea_title && (
-                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-900 bg-blue-50/90 px-2.5 py-1 rounded-lg border border-blue-200">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span>Diambil dari Ide / Brief: <strong>{selectedEvent.related_idea_title}</strong></span>
-                  </div>
-                )}
-                {(selectedEvent.caption || selectedEvent.description) && (
-                  <p className="text-[11px] text-slate-600 mt-1 whitespace-pre-wrap bg-slate-50 p-2.5 rounded border border-slate-200">
-                    {selectedEvent.caption || selectedEvent.description}
-                  </p>
-                )}
-              </div>
-
-              {/* Time & Location */}
-              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200 text-[11px]">
-                <div>
-                  <span className="text-slate-400 font-medium block text-[10px]">Waktu</span>
-                  <span className="font-semibold text-slate-800 flex items-center gap-1 mt-0.5">
-                    <Clock className="w-3 h-3 text-slate-500" />
-                    <span>
-                      {selectedEvent.start
-                        ? new Date(selectedEvent.start).toLocaleString('id-ID', {
-                            weekday: 'short',
-                            day: 'numeric',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : '-'}
-                    </span>
-                  </span>
-                </div>
-
-                {selectedEvent.location && (
-                  <div>
-                    <span className="text-slate-400 font-medium block text-[10px]">Lokasi</span>
-                    <span className="font-semibold text-slate-800 flex items-center gap-1 mt-0.5 truncate">
-                      <MapPin className="w-3 h-3 text-slate-500" />
-                      <span>{selectedEvent.location}</span>
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Equipment checklist (Shooting Only) */}
-              {selectedEvent.type === 'shooting' &&
-                selectedEvent.equipment_checklist &&
-                selectedEvent.equipment_checklist.length > 0 && (
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
-                      <CheckSquare className="w-3.5 h-3.5 text-slate-700" />
-                      <span>Checklist Peralatan (Klik untuk centang)</span>
-                    </span>
-                    <div className="space-y-1 bg-slate-50 p-2.5 rounded border border-slate-200">
-                      {selectedEvent.equipment_checklist.map((eq, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => handleToggleEquipment(idx)}
-                          aria-pressed={eq.checked}
-                          className="w-full flex items-center gap-2 p-1 rounded hover:bg-white text-left transition text-[11px] select-none"
-                        >
-                          {eq.checked ? (
-                            <CheckSquare className="w-3.5 h-3.5 text-slate-900 shrink-0" />
-                          ) : (
-                            <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          )}
-                          <span
-                            className={
-                              eq.checked ? 'line-through text-slate-400 font-normal' : 'text-slate-800 font-medium'
-                            }
-                          >
-                            {eq.item}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              {/* Crew List (Shooting Only) */}
-              {selectedEvent.type === 'shooting' &&
-                selectedEvent.crew_members &&
-                selectedEvent.crew_members.length > 0 && (
-                  <div>
-                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1 mb-1">
-                      <Users className="w-3.5 h-3.5 text-slate-700" />
-                      <span>Daftar Kru & Talent</span>
-                    </span>
-                    <div className="flex flex-wrap gap-1">
-                      {selectedEvent.crew_members.map((c, i) => (
-                        <span
-                          key={i}
-                          className="px-2 py-0.5 bg-slate-100 rounded text-[10.5px] text-slate-700 font-medium border border-slate-200"
-                        >
-                          {c.name} <span className="text-slate-400">({c.role})</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              {/* Attachments Section in Detail Modal */}
-              {selectedEvent.attachments && selectedEvent.attachments.length > 0 && (
-                <div className="space-y-1.5 pt-1 border-t border-slate-200">
-                  <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
-                    <Paperclip className="w-3.5 h-3.5 text-slate-700" />
-                    <span>Lampiran Dokumen &amp; Tautan Cloud ({selectedEvent.attachments.length})</span>
-                  </span>
-                  <AttachmentList attachments={selectedEvent.attachments} />
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => handleDeleteEvent(selectedEvent)}
-                className="px-2.5 py-1 rounded text-rose-600 hover:bg-rose-50 border border-rose-200 text-xs font-semibold flex items-center gap-1 transition"
-              >
-                <Trash2 className="w-3 h-3" />
-                <span>Hapus</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedEvent(null)}
-                className="ui-btn ui-btn-primary py-1 px-3 text-xs"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CalendarEventDetailModal
+        event={selectedEvent}
+        onClose={() => setSelectedEvent(null)}
+        connectedAccounts={connectedAccounts}
+        onEventUpdated={(updatedEv) => {
+          setEvents((prev) => prev.map((e) => (e.id === updatedEv.id ? updatedEv : e)));
+          setSelectedEvent(updatedEv);
+        }}
+        onDelete={handleDeleteEvent}
+        onToggleEquipment={handleToggleEquipment}
+      />
     </div>
   );
 }

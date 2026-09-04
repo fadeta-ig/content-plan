@@ -113,6 +113,18 @@ def get_calendar_posts(request: HttpRequest, start_date: str | None = None, end_
                     }
                 )
 
+        accounts = [
+            {
+                "id": str(pp.social_account.id),
+                "platform": pp.social_account.platform,
+                "account_name": pp.social_account.account_name,
+                "account_handle": pp.social_account.account_handle or "",
+                "avatar_url": pp.social_account.avatar_url or "",
+            }
+            for pp in p_posts
+            if pp.social_account
+        ]
+
         events.append(
             {
                 "id": str(p.id),
@@ -122,9 +134,11 @@ def get_calendar_posts(request: HttpRequest, start_date: str | None = None, end_
                 "first_comment": p.first_comment or "",
                 "start": p.scheduled_at.isoformat() if p.scheduled_at else "",
                 "platforms": platforms or ["social"],
+                "accounts": accounts,
                 "status": primary_status,
                 "thumbnail_url": thumbnail,
                 "media": media_list,
+                "attachments": p.attachments or [],
                 "related_idea_id": str(p.related_idea_id) if p.related_idea_id else (str(p.source_idea.id) if hasattr(p, "source_idea") and p.source_idea else None),
                 "related_idea_title": p.related_idea.title if p.related_idea else (p.source_idea.title if hasattr(p, "source_idea") and p.source_idea else None),
             }

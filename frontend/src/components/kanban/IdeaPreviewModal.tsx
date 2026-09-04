@@ -20,6 +20,8 @@ import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { api, getErrorMessage } from '@/lib/api';
 import AttachmentManager from '@/components/ui/AttachmentManager';
 import AttachmentList from '@/components/ui/AttachmentList';
+import RichContentEditor from '@/components/ui/RichContentEditor';
+import RichTextRenderer from '@/components/ui/RichTextRenderer';
 
 const STATUS_STEPS = [
   { id: 'unassigned', label: 'Ide / Backlog', color: 'bg-slate-100 text-slate-700 border-slate-300' },
@@ -31,6 +33,7 @@ const STATUS_STEPS = [
 interface IdeaPreviewModalProps {
   idea: KanbanCard;
   columnId: string;
+  initialEdit?: boolean;
   onClose: () => void;
   onUpdateIdea: (updatedCard: KanbanCard, newColumnId?: string) => void;
   onDeleteIdea: (cardId: string, title: string) => void;
@@ -39,6 +42,7 @@ interface IdeaPreviewModalProps {
 export default function IdeaPreviewModal({
   idea,
   columnId,
+  initialEdit = false,
   onClose,
   onUpdateIdea,
   onDeleteIdea,
@@ -47,7 +51,7 @@ export default function IdeaPreviewModal({
   const toast = useToast();
   const { confirm } = useConfirm();
 
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(initialEdit);
   const [editTitle, setEditTitle] = useState(idea.title);
   const [editContent, setEditContent] = useState(idea.content || '');
   const [editAttachments, setEditAttachments] = useState<AttachmentItem[]>(idea.attachments || []);
@@ -309,15 +313,12 @@ export default function IdeaPreviewModal({
                 </div>
 
                 <div>
-                  <label htmlFor="edit-idea-content" className="text-[11px] font-semibold text-slate-700 block mb-1">
-                    Rundown Naskah / Detail Brief:
-                  </label>
-                  <textarea
+                  <RichContentEditor
                     id="edit-idea-content"
-                    rows={8}
+                    label="Rundown Naskah / Detail Brief:"
                     value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-md p-3 text-xs text-slate-800 focus:outline-none focus:border-blue-500 leading-relaxed font-sans"
+                    onChange={setEditContent}
+                    minHeight="220px"
                     placeholder="Rincian alur pembahasan, target audiens, poin-poin naskah..."
                   />
                 </div>
@@ -394,8 +395,8 @@ export default function IdeaPreviewModal({
 
                 {/* Brief Script Content */}
                 {idea.content ? (
-                  <div className="text-xs text-slate-700 leading-relaxed font-sans whitespace-pre-wrap selection:bg-blue-100">
-                    {idea.content}
+                  <div className="text-xs text-slate-700 leading-relaxed font-sans selection:bg-blue-100 bg-slate-50/60 p-4 rounded-xl border border-slate-100">
+                    <RichTextRenderer content={idea.content} />
                   </div>
                 ) : (
                   <div className="py-8 text-center text-slate-400 text-xs italic bg-slate-50/50 rounded-lg border border-dashed border-slate-200">

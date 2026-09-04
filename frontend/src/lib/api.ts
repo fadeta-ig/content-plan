@@ -142,6 +142,7 @@ export const api = {
     scheduled_at?: string;
     first_comment?: string;
     media_ids?: string[];
+    attachments?: AttachmentItem[];
     related_idea_id?: string;
     post_now?: boolean;
   }) {

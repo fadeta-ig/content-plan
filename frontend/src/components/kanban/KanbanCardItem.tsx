@@ -9,6 +9,7 @@ import {
   Calendar,
   Eye,
   Paperclip,
+  PenSquare,
 } from 'lucide-react';
 import { KanbanCard } from '@/lib/types';
 
@@ -17,7 +18,7 @@ interface KanbanCardItemProps {
   columnId: string;
   onDragStart: (e: React.DragEvent, cardId: string, columnId: string) => void;
   onDragEnd: (e: React.DragEvent) => void;
-  onOpenPreview: (card: KanbanCard, columnId: string) => void;
+  onOpenPreview: (card: KanbanCard, columnId: string, initialEdit?: boolean) => void;
   onMoveStatus: (cardId: string, currentStatus: string) => void;
   onDelete: (cardId: string, title: string) => void;
 }
@@ -53,6 +54,15 @@ export default function KanbanCardItem({
         </button>
 
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition shrink-0">
+          <button
+            type="button"
+            onClick={() => onOpenPreview(card, columnId, true)}
+            title="Edit Ide Langsung"
+            aria-label={`Edit ide ${card.title}`}
+            className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 p-1 rounded transition"
+          >
+            <PenSquare className="w-3.5 h-3.5" />
+          </button>
           <button
             type="button"
             onClick={() => onOpenPreview(card, columnId)}
@@ -94,6 +104,16 @@ export default function KanbanCardItem({
         <span className="font-mono text-slate-400">{card.created_at || 'Hari Ini'}</span>
 
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onOpenPreview(card, columnId, true)}
+            className="text-slate-700 hover:text-slate-900 font-semibold flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-slate-100 transition"
+            title="Edit naskah dan lampiran ide ini"
+          >
+            <PenSquare className="w-3 h-3 text-slate-600" />
+            <span>Edit</span>
+          </button>
+
           <button
             type="button"
             onClick={() => onOpenPreview(card, columnId)}

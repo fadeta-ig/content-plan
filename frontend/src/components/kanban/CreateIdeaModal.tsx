@@ -9,6 +9,7 @@ import { KanbanCard, AttachmentItem } from '@/lib/types';
 import { api, getErrorMessage } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import AttachmentManager from '@/components/ui/AttachmentManager';
+import RichContentEditor from '@/components/ui/RichContentEditor';
 
 interface CreateIdeaModalProps {
   isOpen: boolean;
@@ -171,16 +172,14 @@ export default function CreateIdeaModal({
             </div>
 
             <div>
-              <label htmlFor="idea-content" className="text-xs font-semibold text-slate-700 block mb-1">
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
                 Naskah Brief / Rundown Konsep:
               </label>
-              <textarea
-                id="idea-content"
-                rows={5}
+              <RichContentEditor
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="Tema, durasi, format, naskah alur pembicaraan, outline poin-poin ide..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-md p-2.5 text-xs text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500 leading-relaxed font-sans"
+                onChange={setContent}
+                placeholder="Tema, durasi, format, naskah alur pembicaraan, outline poin-poin ide, hook..."
+                minHeight="200px"
               />
             </div>
 

@@ -76,6 +76,7 @@ export interface Post {
   approval_status: 'none' | 'pending_approval' | 'approved' | 'rejected' | 'changes_requested';
   first_comment?: string;
   media: MediaItem[];
+  attachments?: AttachmentItem[];
   targets: PlatformPostTarget[];
   related_idea_id?: string | null;
   related_idea_title?: string | null;
@@ -140,6 +141,14 @@ export interface ShootingSession {
   created_at?: string;
 }
 
+export interface CalendarEventAccount {
+  id: string;
+  platform: string;
+  account_name: string;
+  account_handle?: string;
+  avatar_url?: string;
+}
+
 export interface CalendarEvent {
   id: string;
   type?: 'post' | 'shooting';
@@ -151,6 +160,7 @@ export interface CalendarEvent {
   start: string;
   end?: string | null;
   platforms: string[];
+  accounts?: CalendarEventAccount[];
   status: string;
   thumbnail_url?: string;
   media?: MediaItem[];

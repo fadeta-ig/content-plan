@@ -34,6 +34,7 @@ class PostCreateSchema(Schema):
     media_ids: list[str] | None = None
     category_id: str | None = None
     tags: list[str] | None = None
+    attachments: list[dict[str, Any]] | None = None
     related_idea_id: str | None = None
     post_now: bool = False
 
@@ -116,6 +117,7 @@ def list_posts(
                 "approval_status": actual_approval_status,
                 "first_comment": p.first_comment,
                 "media": media_list,
+                "attachments": p.attachments or [],
                 "related_idea_id": str(p.related_idea_id) if p.related_idea_id else (str(p.source_idea.id) if hasattr(p, "source_idea") and p.source_idea else None),
                 "related_idea_title": p.related_idea.title if p.related_idea else (p.source_idea.title if hasattr(p, "source_idea") and p.source_idea else None),
                 "targets": [
@@ -198,6 +200,8 @@ def create_dashboard_post(request: HttpRequest, payload: PostCreateSchema):
                 post.caption = caption
                 post.first_comment = payload.first_comment.strip() if payload.first_comment else ""
                 post.scheduled_at = scheduled_dt
+                if payload.attachments is not None:
+                    post.attachments = payload.attachments
                 if related_idea:
                     post.related_idea = related_idea
                 post.save()
@@ -211,6 +215,7 @@ def create_dashboard_post(request: HttpRequest, payload: PostCreateSchema):
                 first_comment=payload.first_comment.strip() if payload.first_comment else "",
                 scheduled_at=scheduled_dt,
                 related_idea=related_idea,
+                attachments=payload.attachments or [],
             )
 
         for account in target_accounts:
@@ -287,6 +292,7 @@ def get_post_detail(request: HttpRequest, post_id: uuid.UUID):
             "related_idea_id": str(p.related_idea_id) if p.related_idea_id else (str(p.source_idea.id) if hasattr(p, "source_idea") and p.source_idea else None),
             "related_idea_title": p.related_idea.title if p.related_idea else (p.source_idea.title if hasattr(p, "source_idea") and p.source_idea else None),
             "media": media_list,
+            "attachments": p.attachments or [],
             "targets": [
                 {
                     "id": str(pp.id),
