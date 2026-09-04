@@ -30,7 +30,16 @@ class ManualAccountCreateSchema(Schema):
 def list_social_accounts(request: HttpRequest):
     user, workspace = get_current_user_and_workspace(request)
 
-    accounts = SocialAccount.objects.filter(workspace=workspace).order_by("-connected_at")
+    accounts = list(SocialAccount.objects.filter(workspace=workspace).order_by("-connected_at"))
+
+    # Auto-heal any manual accounts (accounts without oauth tokens) that were
+    # erroneously marked as ERROR by the background health check.
+    for a in accounts:
+        if not a.oauth_access_token and a.connection_status == SocialAccount.ConnectionStatus.ERROR:
+            a.connection_status = SocialAccount.ConnectionStatus.CONNECTED
+            a.last_error = ""
+            a.save(update_fields=["connection_status", "last_error", "updated_at"])
+
     accounts_data = [
         {
             "id": str(a.id),
@@ -42,6 +51,8 @@ def list_social_accounts(request: HttpRequest):
             "connection_status": a.connection_status,
             "is_token_expiring_soon": a.is_token_expiring_soon,
             "connected_at": a.connected_at.strftime("%d %b %Y"),
+            "last_error": a.last_error,
+            "is_manual": not bool(a.oauth_access_token),
         }
         for a in accounts
     ]

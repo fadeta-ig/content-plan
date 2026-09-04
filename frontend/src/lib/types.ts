@@ -41,6 +41,8 @@ export interface SocialAccount {
   connection_status: 'connected' | 'token_expiring' | 'disconnected' | 'error';
   is_token_expiring_soon: boolean;
   connected_at: string;
+  last_error?: string;
+  is_manual?: boolean;
 }
 
 export interface MediaItem {

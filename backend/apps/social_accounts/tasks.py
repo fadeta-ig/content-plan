@@ -41,6 +41,24 @@ def check_social_account_health(account_id: str):
         logger.error("Health check: no provider for platform %s", account.platform)
         return
 
+    # Manual accounts or workspace-managed accounts without an OAuth token
+    # do not use third-party OAuth validation. Maintain CONNECTED status.
+    if not account.oauth_access_token:
+        account.last_health_check_at = timezone.now()
+        account.last_error = ""
+        if account.connection_status != SocialAccount.ConnectionStatus.CONNECTED:
+            account.connection_status = SocialAccount.ConnectionStatus.CONNECTED
+        account.save(
+            update_fields=[
+                "connection_status",
+                "last_error",
+                "last_health_check_at",
+                "updated_at",
+            ]
+        )
+        logger.info("Health check: preserved active status for manual account %s", account)
+        return
+
     # Bluesky accounts connected before we recorded token_expires_at need a
     # one-shot refresh to populate it; without this, is_token_expiring_soon
     # stays False forever and the short-lived accessJwt is never rotated.
@@ -80,8 +98,13 @@ def check_social_account_health(account_id: str):
         account.last_error = ""
     except Exception as e:
         logger.warning("Health check: profile fetch failed for %s: %s", account, e)
-        account.connection_status = SocialAccount.ConnectionStatus.ERROR
-        account.last_error = friendly_health_check_error(e)
+        from providers.exceptions import RateLimitError, APIError
+        if isinstance(e, RateLimitError) or (isinstance(e, APIError) and e.status_code and e.status_code >= 500):
+            account.last_error = friendly_health_check_error(e)
+            logger.info("Health check: transient provider error for %s; retaining status", account)
+        else:
+            account.connection_status = SocialAccount.ConnectionStatus.ERROR
+            account.last_error = friendly_health_check_error(e)
 
     account.last_health_check_at = timezone.now()
     account.save(

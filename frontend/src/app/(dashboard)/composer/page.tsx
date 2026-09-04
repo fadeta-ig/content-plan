@@ -13,6 +13,8 @@ import {
   MessageSquare,
   X,
   Sparkles,
+  Copy,
+  AlertCircle,
 } from 'lucide-react';
 import { api, getErrorMessage } from '@/lib/api';
 import { MediaItem, SocialAccount, KanbanCard, AttachmentItem } from '@/lib/types';
@@ -36,6 +38,19 @@ const PLATFORMS = [
   { id: 'pinterest', label: 'Pinterest', maxChars: 500 },
   { id: 'google_business', label: 'Google Business', maxChars: 1500 },
 ];
+
+function extractCleanText(text: string): string {
+  return text
+    .replace(/<br\s*[\/]?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .trim();
+}
 
 function ComposerForm() {
   const router = useRouter();
@@ -263,6 +278,34 @@ function ComposerForm() {
     }
   };
 
+  const exceededPlatforms = selectedPlatforms
+    .map((platId) => {
+      const platObj = PLATFORMS.find((p) => p.id === platId);
+      const max = platObj?.maxChars || 2200;
+      return {
+        id: platId,
+        label: platObj?.label || platId,
+        max,
+        current: caption.length,
+        diff: caption.length - max,
+      };
+    })
+    .filter((p) => p.diff > 0);
+
+  const handleCopyCleanText = async () => {
+    if (!caption.trim()) {
+      toast.warning('Caption Kosong', 'Tidak ada teks caption yang dapat disalin.');
+      return;
+    }
+    const clean = extractCleanText(caption);
+    try {
+      await navigator.clipboard.writeText(clean);
+      toast.success('Teks Bersih Disalin', 'Teks caption berhasil disalin ke clipboard tanpa format tag HTML.');
+    } catch {
+      toast.error('Gagal Menyalin', 'Izin akses clipboard ditolak peramban.');
+    }
+  };
+
   const handleSubmit = (postNow: boolean = false) => {
     if (!caption.trim()) {
       toast.warning('Caption Kosong', 'Mohon isi konten postingan terlebih dahulu sebelum menerbitkan.');
@@ -275,6 +318,14 @@ function ComposerForm() {
         accountsError
           ? 'Daftar akun belum berhasil dimuat. Coba lagi sebelum menyimpan postingan.'
           : 'Hubungkan dan pilih minimal satu akun sosial aktif sebelum menyimpan postingan.'
+      );
+      return;
+    }
+
+    if (exceededPlatforms.length > 0) {
+      toast.warning(
+        'Batas Karakter Terlampaui',
+        `Caption melebihi batas untuk ${exceededPlatforms.map((p) => `${p.label} (maks. ${p.max})`).join(', ')}. Harap sesuaikan naskah sebelum menyimpan.`
       );
       return;
     }
@@ -538,10 +589,21 @@ function ComposerForm() {
 
           {/* Master Caption Box */}
           <div className="ui-card space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label htmlFor="composer-caption" className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                Konten Caption Utama
-              </label>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label htmlFor="composer-caption" className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                  Konten Caption Utama
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCopyCleanText}
+                  className="text-[11px] text-slate-600 hover:text-slate-900 px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-50 transition flex items-center gap-1 font-medium shadow-2xs"
+                  title="Salin isi caption bersih tanpa tag HTML ke clipboard"
+                >
+                  <Copy className="w-3 h-3 text-slate-500" />
+                  <span>Salin Teks Bersih</span>
+                </button>
+              </div>
 
               {/* Character Limit Counters */}
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -555,7 +617,7 @@ function ComposerForm() {
                       key={platId}
                       className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border flex items-center gap-1 ${
                         isOver
-                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold animate-pulse'
                           : 'bg-slate-50 text-slate-600 border-slate-200'
                       }`}
                     >
@@ -566,6 +628,25 @@ function ComposerForm() {
                 })}
               </div>
             </div>
+
+            {/* Over-the-Limit Warning Banner */}
+            {exceededPlatforms.length > 0 && (
+              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-semibold">
+                    Teks Melebihi Batas Karakter Platform
+                  </p>
+                  <p className="text-[11px] text-rose-700 leading-relaxed">
+                    Caption Anda ({caption.length} karakter) melebihi batas untuk:{' '}
+                    <span className="font-semibold">
+                      {exceededPlatforms.map((p) => `${p.label} (maks. ${p.max} karakter, lebih ${p.diff})`).join(', ')}
+                    </span>
+                    . Harap persingkat naskah agar tidak ditolak oleh server sosial media.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <RichContentEditor
               id="composer-caption"

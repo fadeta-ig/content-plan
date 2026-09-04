@@ -262,3 +262,22 @@ class TestCheckSocialAccountHealth:
         assert account.oauth_refresh_token == "fresh_refresh"
         assert account.token_expires_at is not None
         assert account.connection_status == SocialAccount.ConnectionStatus.CONNECTED
+
+    def test_manual_account_health_check_preserves_connected_status(self, workspace):
+        account = SocialAccount.objects.create(
+            workspace=workspace,
+            platform="instagram",
+            account_platform_id="@wijaya.instagram",
+            account_name="PT Wijaya Inovasi Gemilang (Instagram Business)",
+            oauth_access_token="",
+            oauth_refresh_token="",
+            connection_status=SocialAccount.ConnectionStatus.CONNECTED,
+        )
+
+        check_social_account_health.now(str(account.id))
+
+        account.refresh_from_db()
+        assert account.connection_status == SocialAccount.ConnectionStatus.CONNECTED
+        assert account.last_error == ""
+        assert account.last_health_check_at is not None
+

@@ -122,3 +122,28 @@ def reply_inbox_message(request: HttpRequest, payload: InboxReplySchema):
             "sent_at": reply.sent_at.isoformat(),
         },
     }
+
+
+class InboxStatusUpdateSchema(Schema):
+    message_id: uuid.UUID
+    status: str
+
+
+@router.post("/dashboard/inbox/update-status", summary="Update Inbox Message Status")
+def update_inbox_message_status(request: HttpRequest, payload: InboxStatusUpdateSchema):
+    user, workspace = get_current_user_and_workspace(request)
+    require_workspace_permission(request, "use_inbox")
+
+    msg = InboxMessage.objects.filter(id=payload.message_id, workspace=workspace).first()
+    if not msg:
+        raise HttpError(404, "Pesan tidak ditemukan.")
+
+    valid_statuses = [choice[0] for choice in InboxMessage.Status.choices]
+    if payload.status not in valid_statuses:
+        raise HttpError(400, f"Status '{payload.status}' tidak valid.")
+
+    msg.status = payload.status
+    msg.save(update_fields=["status"])
+
+    return {"success": True, "message_id": str(msg.id), "status": msg.status}
+

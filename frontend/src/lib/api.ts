@@ -252,6 +252,17 @@ export const api = {
     });
   },
 
+  async updateInboxMessageStatus(payload: { message_id: string; status: InboxMessage['status'] }) {
+    return fetcher<{
+      success: boolean;
+      message_id: string;
+      status: InboxMessage['status'];
+    }>('/dashboard/inbox/update-status', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   // Analytics
   async getAnalytics(periodDays = 30) {
     return fetcher<AnalyticsData>(`/dashboard/analytics?period_days=${periodDays}`);

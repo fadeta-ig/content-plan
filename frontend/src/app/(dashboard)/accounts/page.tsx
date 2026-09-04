@@ -223,9 +223,21 @@ export default function AccountsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs text-slate-700 font-medium bg-white px-2.5 py-1 rounded border border-slate-200">
-          <Lock className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Enkripsi Token Aktif ({accounts.length} Saluran)</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void loadAccounts()}
+            disabled={loading}
+            className="ui-btn ui-btn-secondary text-xs flex items-center gap-1.5"
+            title="Sinkronkan dan periksa kesehatan saluran"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Periksa & Sinkronkan</span>
+          </button>
+          <div className="flex items-center gap-1.5 text-xs text-slate-700 font-medium bg-white px-2.5 py-1 rounded border border-slate-200">
+            <Lock className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Enkripsi Token Aktif ({accounts.length} Saluran)</span>
+          </div>
         </div>
       </div>
 
@@ -244,8 +256,8 @@ export default function AccountsPage() {
                     <SocialIcon platform={acc.platform} size={16} className="text-white" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-semibold text-slate-900">{acc.account_name}</h3>
-                    <p className="text-[11px] text-slate-500 font-mono">{acc.account_handle}</p>
+                    <h3 className="font-semibold text-slate-900 text-xs leading-tight">{acc.account_name}</h3>
+                    <p className="text-[11px] text-slate-500">{acc.account_handle}</p>
                   </div>
                 </div>
 
@@ -272,6 +284,13 @@ export default function AccountsPage() {
                   </span>
                 </span>
               </div>
+
+              {acc.last_error && acc.connection_status === 'error' && (
+                <div className="text-[10px] text-rose-700 bg-rose-50 border border-rose-200 rounded p-1.5 flex items-start gap-1.5 leading-tight">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                  <span>{acc.last_error}</span>
+                </div>
+              )}
 
               <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
                 <span className="text-slate-500">Total Pengikut:</span>

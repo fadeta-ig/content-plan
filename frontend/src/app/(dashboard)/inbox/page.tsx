@@ -8,6 +8,10 @@ import {
   CheckCircle2,
   ShieldCheck,
   Clock,
+  Zap,
+  CheckCheck,
+  RotateCcw,
+  Archive,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { InboxMessage } from '@/lib/types';
@@ -40,13 +44,45 @@ const INBOX_STATUS_CONFIG: Record<
   },
 };
 
+const QUICK_REPLY_TEMPLATES = [
+  {
+    id: 'greeting',
+    title: 'Sapaan & Bantuan',
+    text: 'Halo Kak! Terima kasih sudah menghubungi PT Wijaya Inovasi Gemilang. Ada yang bisa kami bantu lebih lanjut?',
+  },
+  {
+    id: 'noted',
+    title: 'Catat & Tindak Lanjut',
+    text: 'Halo Kak! Pertanyaan Anda sudah kami catat dan tim kami akan segera menindaklanjuti. Mohon ditunggu ya.',
+  },
+  {
+    id: 'thanks',
+    title: 'Apresiasi & Terima Kasih',
+    text: 'Terima kasih banyak atas apresiasi dan dukungannya! Sukses dan sehat selalu untuk Anda.',
+  },
+  {
+    id: 'partnership',
+    title: 'Info Kerjasama & Proposal',
+    text: 'Untuk informasi kemitraan, kolaborasi konten, atau penawaran resmi, silakan kirimkan proposal ke contact@wijayainovasi.com ya Kak.',
+  },
+  {
+    id: 'investigating',
+    title: 'Pemeriksaan Kendala',
+    text: 'Mohon maaf atas ketidaknyamanannya. Kami sedang memeriksa kendala ini bersama tim teknis dan akan mengabari Anda segera.',
+  },
+];
+
+type StatusFilterType = 'all' | 'unread' | 'open' | 'resolved' | 'archived';
+
 export default function InboxPage() {
   const toast = useToast();
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [selectedMessage, setSelectedMessage] = useState<InboxMessage | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [filterPlatform, setFilterPlatform] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<StatusFilterType>('all');
   const [sending, setSending] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
@@ -76,7 +112,7 @@ export default function InboxPage() {
   };
 
   useEffect(() => {
-    loadInbox();
+    void loadInbox();
   }, []);
 
   const handleSendReply = async (e: React.FormEvent) => {
@@ -121,9 +157,47 @@ export default function InboxPage() {
     }
   };
 
-  const filteredMessages = messages.filter((m) =>
-    filterPlatform === 'all' ? true : m.platform === filterPlatform
-  );
+  const handleUpdateStatus = async (newStatus: InboxMessage['status']) => {
+    if (!selectedMessage || updatingStatus) return;
+
+    setUpdatingStatus(true);
+    try {
+      await api.updateInboxMessageStatus({
+        message_id: selectedMessage.id,
+        status: newStatus,
+      });
+
+      setMessages((prev) =>
+        prev.map((m) => (m.id === selectedMessage.id ? { ...m, status: newStatus } : m))
+      );
+      setSelectedMessage((prev) => (prev ? { ...prev, status: newStatus } : null));
+
+      const label = INBOX_STATUS_CONFIG[newStatus].detailLabel;
+      toast.success('Status Diperbarui', `Percakapan ditandai sebagai "${label}".`);
+    } catch (error) {
+      toast.error(
+        'Gagal Mengubah Status',
+        error instanceof Error && error.message ? error.message : 'Terjadi kesalahan sistem saat memperbarui status.'
+      );
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  const statusCounts = {
+    all: messages.length,
+    unread: messages.filter((m) => m.status === 'unread').length,
+    open: messages.filter((m) => m.status === 'open').length,
+    resolved: messages.filter((m) => m.status === 'resolved').length,
+    archived: messages.filter((m) => m.status === 'archived').length,
+  };
+
+  const filteredMessages = messages.filter((m) => {
+    const matchesPlatform = filterPlatform === 'all' || m.platform === filterPlatform;
+    const matchesStatus = filterStatus === 'all' || m.status === filterStatus;
+    return matchesPlatform && matchesStatus;
+  });
+
   const selectedStatus = selectedMessage ? INBOX_STATUS_CONFIG[selectedMessage.status] : null;
 
   return (
@@ -149,37 +223,75 @@ export default function InboxPage() {
       {loadError && (
         <div className="ui-card border-rose-200 bg-rose-50 text-rose-800 p-3 flex items-center justify-between gap-3" role="alert">
           <span className="text-xs">{loadError}</span>
-          <button type="button" className="ui-btn ui-btn-secondary shrink-0" onClick={loadInbox}>Coba Lagi</button>
+          <button type="button" className="ui-btn ui-btn-secondary shrink-0" onClick={() => void loadInbox()}>
+            Coba Lagi
+          </button>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start" aria-busy={loading}>
         {/* Left Column: Messages List (5 Cols) */}
         <div className="lg:col-span-5 ui-card p-0 overflow-hidden space-y-0">
-          {/* Filter Bar */}
-          <div className="p-2 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
+          {/* Status Filter Tabs */}
+          <div className="border-b border-slate-200 bg-slate-50 flex items-center gap-1 p-1.5 overflow-x-auto text-xs">
+            {(
+              [
+                { id: 'all', label: 'Semua', count: statusCounts.all },
+                { id: 'unread', label: 'Menunggu', count: statusCounts.unread },
+                { id: 'open', label: 'Ditangani', count: statusCounts.open },
+                { id: 'resolved', label: 'Selesai', count: statusCounts.resolved },
+                { id: 'archived', label: 'Arsip', count: statusCounts.archived },
+              ] as const
+            ).map((tab) => {
+              const isActive = filterStatus === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFilterStatus(tab.id)}
+                  className={`px-2.5 py-1 rounded-md font-medium text-[11px] flex items-center gap-1.5 transition whitespace-nowrap ${
+                    isActive
+                      ? 'bg-white text-slate-900 shadow-2xs font-semibold border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/70'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                      isActive ? 'bg-slate-900 text-white font-bold' : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Platform Filter Bar */}
+          <div className="p-2 border-b border-slate-100 bg-white flex items-center justify-between gap-2">
             <div className="flex items-center gap-1 overflow-x-auto">
               {['all', 'instagram', 'linkedin', 'facebook', 'tiktok'].map((plat) => (
                 <button
                   type="button"
                   key={plat}
                   onClick={() => setFilterPlatform(plat)}
-                  className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition shrink-0 ${
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition shrink-0 ${
                     filterPlatform === plat
-                      ? 'bg-slate-900 text-white font-semibold'
-                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                      ? 'bg-slate-800 text-white font-semibold'
+                      : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
                   {plat !== 'all' && (
-                    <SocialIcon platform={plat} size={11} className={filterPlatform === plat ? 'text-white' : undefined} />
+                    <SocialIcon platform={plat} size={10} className={filterPlatform === plat ? 'text-white' : undefined} />
                   )}
-                  <span>{plat === 'all' ? 'Semua' : plat.toUpperCase()}</span>
+                  <span>{plat === 'all' ? 'Semua Platform' : plat.toUpperCase()}</span>
                 </button>
               ))}
             </div>
 
-            <span className="text-[11px] font-semibold text-slate-500 shrink-0">
-              {filteredMessages.length} Pesan
+            <span className="text-[10px] font-semibold text-slate-400 shrink-0">
+              {filteredMessages.length} Percakapan
             </span>
           </div>
 
@@ -210,11 +322,11 @@ export default function InboxPage() {
                         : 'hover:bg-slate-50/50'
                     }`}
                   >
-                    <div className="space-y-1 flex-1">
+                    <div className="space-y-1 flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <SocialIcon platform={msg.platform} size={13} />
-                        <span className="font-semibold text-slate-900 text-xs">{msg.sender_name}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">
+                        <span className="font-semibold text-slate-900 text-xs truncate">{msg.sender_name}</span>
+                        <span className="text-[10px] text-slate-400 font-mono shrink-0">
                           • {new Date(msg.received_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
@@ -235,7 +347,7 @@ export default function InboxPage() {
             ) : (
               <div className="py-16 text-center text-xs text-slate-400 space-y-1">
                 <InboxIcon className="w-6 h-6 text-slate-300 mx-auto" />
-                <p>Belum ada pesan atau komentar masuk.</p>
+                <p>Tidak ada pesan dalam filter ini.</p>
               </div>
             )}
           </div>
@@ -250,27 +362,72 @@ export default function InboxPage() {
             </div>
           ) : selectedMessage && selectedStatus ? (
             <>
-              {/* Message Header */}
-              <div className="p-3 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center font-bold text-xs text-slate-700">
+              {/* Message Header & Status Actions */}
+              <div className="p-3 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0">
                     {selectedMessage.sender_name.slice(0, 2).toUpperCase()}
                   </div>
-                  <div>
-                    <h3 className="text-xs font-semibold text-slate-900 leading-tight">
+                  <div className="min-w-0">
+                    <h3 className="text-xs font-semibold text-slate-900 leading-tight truncate">
                       {selectedMessage.sender_name}
                     </h3>
-                    <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                    <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5 truncate">
                       <SocialIcon platform={selectedMessage.platform} size={11} />
                       <span>{selectedMessage.account_name}</span>
                     </p>
                   </div>
                 </div>
 
-                <span className={`ui-badge text-[10px] ${selectedStatus.className}`}>
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>{selectedStatus.detailLabel}</span>
-                </span>
+                {/* Status Badge & Action Controls */}
+                <div className="flex items-center gap-2">
+                  <span className={`ui-badge text-[10px] ${selectedStatus.className}`}>
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>{selectedStatus.detailLabel}</span>
+                  </span>
+
+                  {/* Status Toggle Actions */}
+                  <div className="flex items-center gap-1">
+                    {selectedMessage.status !== 'resolved' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus('resolved')}
+                        disabled={updatingStatus}
+                        className="text-[11px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-1 rounded flex items-center gap-1 transition"
+                        title="Tandai percakapan ini selesai"
+                      >
+                        <CheckCheck className="w-3 h-3" />
+                        <span>Selesai</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus('open')}
+                        disabled={updatingStatus}
+                        className="text-[11px] font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2 py-1 rounded flex items-center gap-1 transition"
+                        title="Buka kembali percakapan"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Buka Kembali</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateStatus(selectedMessage.status === 'archived' ? 'open' : 'archived')}
+                      disabled={updatingStatus}
+                      className={`text-[11px] font-medium px-2 py-1 rounded border flex items-center gap-1 transition ${
+                        selectedMessage.status === 'archived'
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-white text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50'
+                      }`}
+                      title="Arsipkan percakapan"
+                    >
+                      <Archive className="w-3 h-3" />
+                      <span>{selectedMessage.status === 'archived' ? 'Batal Arsip' : 'Arsip'}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Message Body & Replies Thread */}
@@ -298,8 +455,36 @@ export default function InboxPage() {
                 ))}
               </div>
 
-              {/* Reply Form */}
-              <form onSubmit={handleSendReply} className="p-3 border-t border-slate-200 bg-white space-y-2">
+              {/* Reply Form & Quick Replies */}
+              <form onSubmit={handleSendReply} className="p-3 border-t border-slate-200 bg-white space-y-2.5">
+                {/* Quick Reply Template Selector */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                    <span className="flex items-center gap-1">
+                      <Zap className="w-3 h-3 text-amber-500" />
+                      <span>Template Balasan Cepat:</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400">Klik untuk menyisipkan ke kotak balasan</span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pb-0.5">
+                    {QUICK_REPLY_TEMPLATES.map((tmpl) => (
+                      <button
+                        key={tmpl.id}
+                        type="button"
+                        onClick={() => {
+                          setReplyContent((prev) => (prev.trim() ? `${prev}\n\n${tmpl.text}` : tmpl.text));
+                          toast.info('Template Disisipkan', `Menyisipkan "${tmpl.title}".`);
+                        }}
+                        className="text-[10px] bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded px-2 py-0.5 transition whitespace-nowrap shadow-2xs"
+                        title={tmpl.text}
+                      >
+                        ⚡ {tmpl.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <textarea
                   rows={3}
                   value={replyContent}
